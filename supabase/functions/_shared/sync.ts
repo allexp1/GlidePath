@@ -18,7 +18,8 @@ import type { OverpassOptions } from './overpass.ts'
 import {
   translateAverageSpeedZone,
   translatePointCamera,
-  translateRestStop
+  translateRestStop,
+  zoneRejectionReason
 } from './translate.ts'
 import type { CameraRow, RestStopRow, ZoneRow } from './translate.ts'
 
@@ -113,13 +114,28 @@ export async function syncCountry(
     cameras.push(row)
   }
 
+  // The query returns the relations with geometry and their member ways with
+  // tags. The ways are only here for their maxspeed, which is where the limit
+  // lives when the relation does not carry one of its own.
+  const wayTags = new Map<number, Record<string, string>>()
+  for (const element of zoneResponse.elements) {
+    if (element.type === 'way' && element.tags) wayTags.set(element.id, element.tags)
+  }
+
   const zones: ZoneRow[] = []
   for (const element of zoneResponse.elements) {
-    const row = translateAverageSpeedZone(element, countryCode)
+    if (element.type !== 'relation') continue
+
+    const row = translateAverageSpeedZone(element, countryCode, wayTags)
     if (row) {
       zones.push(row)
-    } else if (element.type === 'relation') {
-      warnings.push(`relation/${element.id} skipped: no usable geometry or limit`)
+    } else {
+      // Say which of the two it is. "no usable geometry or limit" covers both
+      // and so points at neither, which cost a round trip to a real dataset to
+      // work out once already.
+      warnings.push(
+        `relation/${element.id} skipped: ${zoneRejectionReason(element, wayTags) ?? 'unknown'}`
+      )
     }
   }
 

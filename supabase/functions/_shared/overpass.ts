@@ -67,12 +67,22 @@ out body qt;`
  * `device` members for the cameras themselves. `out geom` is what makes the
  * member way geometry come back, which is the only way to get a road-distance
  * rather than a straight line between the endpoints.
+ *
+ * The second half fetches the member ways again, tags only, because most
+ * relations do not carry a `maxspeed` of their own - 164 of Lithuania's 182 do
+ * not - and the limit being enforced is simply the posted limit of the road the
+ * section runs along. Reading it off the ways is not a guess; it is reading the
+ * same fact from where OpenStreetMap actually keeps it. `out tags` rather than
+ * `out geom` because the geometry already came back above and repeating it would
+ * roughly double a response that is already the largest one here.
  */
 export function averageSpeedZoneQuery(isoCode: string, timeoutSeconds = 300): string {
   return `[out:json][timeout:${timeoutSeconds}];
 area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
-relation["type"="enforcement"]["enforcement"="average_speed"](area.country);
-out geom;`
+relation["type"="enforcement"]["enforcement"="average_speed"](area.country)->.sections;
+.sections out geom;
+way(r.sections)->.roads;
+.roads out tags;`
 }
 
 /**

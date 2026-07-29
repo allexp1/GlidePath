@@ -57,13 +57,45 @@ export function lineStringWKT(points: LatLon[]): string | null {
   return `SRID=4326;LINESTRING(${coords})`
 }
 
+interface WayJoin {
+  index: number
+  /** True when it is the way's first point that touches the anchor. */
+  touchesStart: boolean
+  distance: number
+}
+
+/** The remaining way with an endpoint closest to `anchor`, within tolerance. */
+function nearestJoin(ways: LatLon[][], anchor: LatLon, tolerance: number): WayJoin | null {
+  let best: WayJoin | null = null
+
+  for (let index = 0; index < ways.length; index++) {
+    const way = ways[index]
+    const candidates: WayJoin[] = [
+      { index, touchesStart: true, distance: distanceMeters(anchor, way[0]) },
+      { index, touchesStart: false, distance: distanceMeters(anchor, way[way.length - 1]) }
+    ]
+    for (const candidate of candidates) {
+      if (candidate.distance <= tolerance && (best === null || candidate.distance < best.distance)) {
+        best = candidate
+      }
+    }
+  }
+
+  return best
+}
+
 /**
  * Joins OSM way geometries end to end.
  *
  * Relation members arrive in document order but not necessarily in travel
  * order, and any given way may be digitised against the direction of travel.
- * At each step this picks whichever remaining way has an endpoint nearest the
- * current end of the chain and flips it if needed.
+ *
+ * The chain grows from **both** ends, which matters more than it sounds. Members
+ * are listed in whatever order the mapper added them, so the first one is often
+ * somewhere in the middle of the section: growing only forwards stops at the
+ * first gap and returns a fragment of the road, silently, and a fragment is
+ * indistinguishable from a short section. A real Lithuanian relation had its two
+ * ways listed second-then-first and measured 500 m instead of 3 km because of it.
  *
  * `toleranceMeters` is what counts as "joined". OSM nodes are shared between
  * ways so the true gap is zero, but rounding in Overpass output and the
@@ -78,34 +110,27 @@ export function stitchWays(ways: LatLon[][], toleranceMeters = 25): LatLon[] {
   const chain = [...(remaining.shift() as LatLon[])]
 
   while (remaining.length > 0) {
-    const tail = chain[chain.length - 1]
+    const atTail = nearestJoin(remaining, chain[chain.length - 1], toleranceMeters)
+    if (atTail) {
+      const [way] = remaining.splice(atTail.index, 1)
+      // Orient it to start where the chain currently ends, then drop the shared
+      // junction node so it is not repeated.
+      const oriented = atTail.touchesStart ? way : [...way].reverse()
+      chain.push(...oriented.slice(1))
+      continue
+    }
 
-    let bestIndex = -1
-    let bestDistance = Infinity
-    let bestReversed = false
+    const atHead = nearestJoin(remaining, chain[0], toleranceMeters)
+    if (atHead) {
+      const [way] = remaining.splice(atHead.index, 1)
+      // Orient it to end where the chain currently starts.
+      const oriented = atHead.touchesStart ? [...way].reverse() : way
+      chain.unshift(...oriented.slice(0, -1))
+      continue
+    }
 
-    remaining.forEach((way, index) => {
-      const toStart = distanceMeters(tail, way[0])
-      const toEnd = distanceMeters(tail, way[way.length - 1])
-
-      if (toStart < bestDistance) {
-        bestDistance = toStart
-        bestIndex = index
-        bestReversed = false
-      }
-      if (toEnd < bestDistance) {
-        bestDistance = toEnd
-        bestIndex = index
-        bestReversed = true
-      }
-    })
-
-    if (bestIndex < 0 || bestDistance > toleranceMeters) break
-
-    const [next] = remaining.splice(bestIndex, 1)
-    const ordered = bestReversed ? [...next].reverse() : next
-    // Drop the shared junction node so it is not repeated.
-    chain.push(...ordered.slice(1))
+    // Nothing left touches either end: the rest is a disconnected fragment.
+    break
   }
 
   return chain

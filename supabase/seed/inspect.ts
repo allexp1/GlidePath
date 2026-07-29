@@ -14,7 +14,6 @@
  * the real data rather than from the wiki.
  */
 
-import { stitchWays } from '../functions/_shared/geo.ts'
 import type { LatLon } from '../functions/_shared/geo.ts'
 import {
   averageSpeedZoneQuery,
@@ -23,9 +22,9 @@ import {
 } from '../functions/_shared/overpass.ts'
 import type { OverpassElement } from '../functions/_shared/overpass.ts'
 import {
-  parseMaxspeed,
   translateAverageSpeedZone,
-  translatePointCamera
+  translatePointCamera,
+  zoneRejectionReason
 } from '../functions/_shared/translate.ts'
 
 const SAMPLE_RELATIONS = 2
@@ -87,7 +86,7 @@ async function inspectPointCameras(iso: string): Promise<void> {
   if (acceptedTypes.size > 0) {
     console.log('')
     console.log('  accepted by type:')
-    for (const [type, count] of sorted(acceptedTypes)) console.log(`    ${count.toString().padStart(6)}  ${type}`)
+    for (const [type, count] of sorted(acceptedTypes)) listing(type, count)
   }
 
   // The interesting case: nodes the area query matched but the translator threw
@@ -95,7 +94,14 @@ async function inspectPointCameras(iso: string): Promise<void> {
   if (rejected.length > 0) {
     console.log('')
     console.log('  tags on rejected nodes:')
-    tally(rejected, ['highway', 'man_made', 'enforcement', 'surveillance', 'surveillance:type', 'surveillance:zone'])
+    tally(rejected, [
+      'highway',
+      'man_made',
+      'enforcement',
+      'surveillance',
+      'surveillance:type',
+      'surveillance:zone'
+    ])
   }
 
   if (nodes.length === 0) {
@@ -111,33 +117,6 @@ async function inspectPointCameras(iso: string): Promise<void> {
 // Average-speed sections
 // ---------------------------------------------------------------------------
 
-/** Mirrors the rejection order inside translateAverageSpeedZone. */
-function rejectionReason(relation: OverpassElement): string | null {
-  if (relation.type !== 'relation' || !relation.members) return 'not a relation with members'
-
-  const tags = relation.tags ?? {}
-  if (!tags.maxspeed) return 'no maxspeed tag'
-  if (!parseMaxspeed(tags.maxspeed)) return `maxspeed unparseable (${tags.maxspeed})`
-
-  const roadWays = relation.members
-    .filter((m) => m.type === 'way' && (m.role === '' || m.role === 'road') && m.geometry)
-    .map((m) => m.geometry as LatLon[])
-  const path = stitchWays(roadWays)
-  const devices = relation.members.filter((m) => m.role === 'device').length
-
-  if (path.length < 2) {
-    const waysWithGeometry = relation.members.filter((m) => m.type === 'way' && m.geometry).length
-    if (roadWays.length === 0 && waysWithGeometry > 0) {
-      return `no way has role "" or "road" (${waysWithGeometry} ways carry geometry under other roles)`
-    }
-    if (waysWithGeometry === 0) return 'no member way came back with geometry'
-    return `road ways would not stitch into one path (${roadWays.length} ways)`
-  }
-
-  if (devices < 2) return `only ${devices} device member(s)`
-  return null
-}
-
 async function inspectZones(iso: string): Promise<void> {
   heading(`${iso} average-speed relations`)
 
@@ -149,10 +128,20 @@ async function inspectZones(iso: string): Promise<void> {
     return
   }
 
+  // The query returns the member ways too, tags only, because the limit usually
+  // lives on the road rather than on the relation.
+  const wayTags = new Map<number, Record<string, string>>()
+  for (const element of elements) {
+    if (element.type === 'way' && element.tags) wayTags.set(element.id, element.tags)
+  }
+
   const relations = elements.filter((element) => element.type === 'relation')
-  const rejects = relations.filter((relation) => translateAverageSpeedZone(relation, iso) === null)
+  const rejects = relations.filter(
+    (relation) => translateAverageSpeedZone(relation, iso, wayTags) === null
+  )
 
   stat('relations returned', relations.length)
+  stat('member ways with tags', wayTags.size)
   stat('accepted', relations.length - rejects.length)
   stat('rejected', rejects.length)
 
@@ -161,10 +150,10 @@ async function inspectZones(iso: string): Promise<void> {
   const maxspeeds = new Map<string, number>()
 
   for (const relation of rejects) {
-    const reason = rejectionReason(relation)
-    // A null reason here means the two functions disagree, which is a bug in
-    // this file rather than in the data. Say so rather than hiding it.
-    bump(reasons, reason ?? 'no reason found - rejectionReason is out of sync with the translator')
+    // The reason comes from the same module that does the rejecting, so the two
+    // cannot drift apart.
+    const reason = zoneRejectionReason(relation, wayTags)
+    bump(reasons, reason ?? 'no reason given - a bug in the reporter')
 
     bump(maxspeeds, relation.tags?.maxspeed ?? '(absent)')
     for (const member of relation.members ?? []) {
@@ -176,15 +165,15 @@ async function inspectZones(iso: string): Promise<void> {
   if (reasons.size > 0) {
     console.log('')
     console.log('  rejected because:')
-    for (const [reason, count] of sorted(reasons)) console.log(`    ${count.toString().padStart(6)}  ${reason}`)
+    for (const [reason, count] of sorted(reasons)) listing(reason, count)
 
     console.log('')
     console.log('  member roles across rejected relations:')
-    for (const [role, count] of sorted(roles).slice(0, TOP_N)) console.log(`    ${count.toString().padStart(6)}  ${role}`)
+    for (const [role, count] of sorted(roles).slice(0, TOP_N)) listing(role, count)
 
     console.log('')
     console.log('  maxspeed values on rejected relations:')
-    for (const [value, count] of sorted(maxspeeds).slice(0, TOP_N)) console.log(`    ${count.toString().padStart(6)}  ${value}`)
+    for (const [value, count] of sorted(maxspeeds).slice(0, TOP_N)) listing(value, count)
   }
 
   // A trimmed sample, because a role histogram cannot show whether the ways are
@@ -226,6 +215,11 @@ function stat(label: string, value: number): void {
   console.log(`  ${label.padEnd(26)} ${value.toString().padStart(6)}`)
 }
 
+/** One line of a count-then-label histogram. */
+function listing(label: string, count: number): void {
+  console.log(`    ${count.toString().padStart(6)}  ${label}`)
+}
+
 function bump(counter: Map<string, number>, key: string): void {
   counter.set(key, (counter.get(key) ?? 0) + 1)
 }
@@ -253,7 +247,7 @@ function tally(nodes: OverpassElement[], keys: string[]): void {
     bump(combinations, present.length > 0 ? present.join(' ') : '(none of the classifying tags)')
   }
   for (const [combination, count] of sorted(combinations).slice(0, TOP_N)) {
-    console.log(`    ${count.toString().padStart(6)}  ${combination}`)
+    listing(combination, count)
   }
 }
 

@@ -140,6 +140,13 @@ jobs:
       - name: Lint
         run: deno lint supabase/functions supabase/seed
 
+      # The translation layer decides what the app claims about a camera and how
+      # long a section is, off tagging that is a convention rather than a schema.
+      # It went untested until a real country turned out to use a member role the
+      # code did not accept.
+      - name: Test the shared sync modules
+        run: deno test supabase/functions/_shared
+
       # Type checking is not loading. `deno check` resolves npm specifiers
       # through the global cache and passes, while `deno run` can still fail on
       # a real machine because something upstream put Deno into node-resolution

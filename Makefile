@@ -105,6 +105,10 @@ test-app: project ## Run the full test suite through xcodebuild on a simulator
 		-destination '$(DESTINATION)' \
 		CODE_SIGNING_ALLOWED=NO
 
+.PHONY: test-sync
+test-sync: ## Run the Deno tests for the Overpass translation layer
+	deno test supabase/functions/_shared
+
 .PHONY: lint
 lint: ## Run SwiftLint
 	swiftlint lint --strict

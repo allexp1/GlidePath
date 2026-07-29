@@ -229,6 +229,38 @@ unverified. OSM edits get reverted and areas get re-tagged, and a mapping
 accident must not be able to silently switch off warnings for a camera that is
 really there.
 
+### How an average-speed section is read
+
+This is the part that took a real country to get right, so it is written down.
+
+A section is a `type=enforcement` + `enforcement=average_speed` relation. Three
+things have to come out of it, and each one has a rule:
+
+- **The road.** Member ways under role `section` (also `road`, or no role). Their
+  stitched geometry is the distance the coaching maths divides by; a straight line
+  between the cameras understates it badly on anything but a motorway. Members
+  arrive in whatever order the mapper added them, so the stitch grows from both
+  ends of the chain, not just forwards. Growing forwards only returns a fragment
+  of the road whenever the first member happens to sit in the middle, and a
+  fragment is indistinguishable from a genuinely short section.
+- **The limit.** From the relation's `maxspeed` if it has one. Most do not, so it
+  otherwise comes off the member ways, where OSM actually keeps the posted limit.
+  Every road way must carry one and they must all agree. A section whose ways
+  disagree either changes limit part way along or has a slip road included by
+  mistake, and there is no honest single number for either; the lowest would put a
+  figure on screen contradicting the signs for most of the drive and the highest
+  could earn a fine, so the section is skipped instead.
+- **The direction.** From the `from` and `to` members. Without them the stitched
+  path points either way with equal likelihood, which swaps entry and exit and has
+  the app coaching towards the camera the driver has already passed. Each
+  carriageway is its own relation, so this is not an edge case.
+
+A relation that cannot satisfy all three is skipped with a reason saying which
+one failed. `make inspect CODE=XX` reports those reasons across a whole country,
+plus a histogram of the member roles and limits actually present. It runs the
+same queries through the same code, so it cannot disagree with what the seeder
+does. `make test-sync` covers the rules above.
+
 Israel's new average-speed sections are entered by hand in
 `supabase/seed/israel_zones.json`, because OpenStreetMap will not carry them for
 months after enforcement starts. **That file ships empty on purpose** — see

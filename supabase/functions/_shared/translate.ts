@@ -13,7 +13,13 @@
  * exists gets a fine.
  */
 
-import { bearingDegrees, distanceAlong, polylineLength, stitchWays } from './geo.ts'
+import {
+  bearingDegrees,
+  distanceAlong,
+  distanceMeters,
+  polylineLength,
+  stitchWays
+} from './geo.ts'
 import type { LatLon } from './geo.ts'
 import type { OverpassElement, OverpassMember } from './overpass.ts'
 
@@ -211,14 +217,81 @@ function memberPoint(member: OverpassMember): LatLon | null {
   return null
 }
 
+/** Roles under which mappers put the road itself. `section` is the common one. */
+const ROAD_ROLES = new Set(['', 'road', 'section'])
+
+/**
+ * The limit a section enforces, when the relation itself does not say.
+ *
+ * Most enforcement relations carry no `maxspeed` of their own, because the limit
+ * being enforced is simply the posted limit of the road. That lives on the member
+ * ways, so this reads it from there. Not a guess: the same fact, read from where
+ * OpenStreetMap actually keeps it.
+ *
+ * Every road way must carry a limit and they must all agree. A section whose ways
+ * disagree either genuinely changes limit part way along or has a slip road
+ * included by mistake, and there is no honest single number for either case.
+ * Taking the lowest would be safe against a fine but would put a number on screen
+ * that contradicts the signs for most of the drive; taking the highest could earn
+ * one. Refusing is the only option that never states something untrue.
+ */
+function limitFromRoadWays(
+  members: OverpassMember[],
+  wayTags: Map<number, Record<string, string>>
+): number | null {
+  const roadWays = members.filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role))
+  if (roadWays.length === 0) return null
+
+  const limits = new Set<number>()
+  for (const way of roadWays) {
+    const limit = parseMaxspeed(wayTags.get(way.ref)?.maxspeed)
+    if (!limit) return null
+    limits.add(limit)
+  }
+
+  return limits.size === 1 ? [...limits][0] : null
+}
+
+/**
+ * Puts a stitched path into the direction of travel.
+ *
+ * The `from` and `to` members are the only statement of direction in the
+ * relation, and the ways come back in whatever order they were added, so the
+ * stitched path points either way with equal likelihood. Getting this wrong
+ * swaps entry and exit, which means the app coaches towards the camera the
+ * driver has already passed - a zone driven backwards.
+ */
+function orientToTravel(path: LatLon[], members: OverpassMember[]): LatLon[] {
+  if (path.length < 2) return path
+
+  const from = members.find((m) => m.role === 'from')
+  const to = members.find((m) => m.role === 'to')
+  const start = from ? memberPoint(from) : null
+  const end = to ? memberPoint(to) : null
+  if (!start && !end) return path
+
+  const head = path[0]
+  const tail = path[path.length - 1]
+
+  // Sum both ends when both are known, so one mis-mapped marker cannot flip it.
+  const asIs = (start ? distanceMeters(start, head) : 0) + (end ? distanceMeters(end, tail) : 0)
+  const flipped = (start ? distanceMeters(start, tail) : 0) + (end ? distanceMeters(end, head) : 0)
+
+  return flipped < asIs ? [...path].reverse() : path
+}
+
 /**
  * Builds a zone from a `type=enforcement, enforcement=average_speed` relation.
  *
- * The relation carries the road as unrolled member ways, the two cameras as
- * `device` members, and the section boundaries as `from` and `to`. The road
- * ways are what matter: their combined length is the distance the allowance
- * math divides by, and a straight line between the cameras would understate it
- * badly on anything but a motorway.
+ * The relation carries the road as member ways under the `section` role, the two
+ * cameras as `device` members, and the direction of travel as `from` and `to`.
+ * The road ways are what matter: their combined length is the distance the
+ * allowance math divides by, and a straight line between the cameras would
+ * understate it badly on anything but a motorway.
+ *
+ * `wayTags` carries the member ways' tags so the limit can be read off the road
+ * when the relation has none. It defaults to empty, so a caller holding only
+ * geometry still works.
  *
  * Returns null when the relation cannot be made into something driveable.
  * Storing a zone with a guessed length would be worse than not storing it: the
@@ -226,19 +299,21 @@ function memberPoint(member: OverpassMember): LatLon | null {
  */
 export function translateAverageSpeedZone(
   relation: OverpassElement,
-  countryCode: string
+  countryCode: string,
+  wayTags: Map<number, Record<string, string>> = new Map()
 ): ZoneRow | null {
   if (relation.type !== 'relation' || !relation.members) return null
 
   const tags = relation.tags ?? {}
-  const limit = parseMaxspeed(tags.maxspeed)
+  // The relation wins when it has a limit: a mapper who put one there meant it.
+  const limit = parseMaxspeed(tags.maxspeed) ?? limitFromRoadWays(relation.members, wayTags)
   if (!limit) return null // without a limit there is nothing to enforce against
 
   const roadWays = relation.members
-    .filter((m) => m.type === 'way' && (m.role === '' || m.role === 'road') && m.geometry)
+    .filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role) && m.geometry)
     .map((m) => m.geometry as LatLon[])
 
-  const path = stitchWays(roadWays)
+  const path = orientToTravel(stitchWays(roadWays), relation.members)
 
   const devices = relation.members
     .filter((m) => m.role === 'device')
@@ -294,6 +369,76 @@ export function translateAverageSpeedZone(
     path,
     measured
   }
+}
+
+/**
+ * Why `translateAverageSpeedZone` refused a relation, in a sentence.
+ *
+ * Exists because the alternative is a single catch-all warning, and a wall of
+ * two hundred identical "no usable geometry or limit" lines says that something
+ * is wrong while saying nothing about what. Working out which half was at fault
+ * cost a round trip to a real dataset once; it should not cost another.
+ *
+ * Reported most-fundamental first rather than in the order the translator checks
+ * them: a relation with no road at all is a different conversation from one whose
+ * limit is missing, and it is the more useful thing to be told.
+ *
+ * Returns null when the relation is in fact usable.
+ */
+export function zoneRejectionReason(
+  relation: OverpassElement,
+  wayTags: Map<number, Record<string, string>> = new Map()
+): string | null {
+  if (relation.type !== 'relation' || !relation.members) return 'not a relation with members'
+  if (translateAverageSpeedZone(relation, 'XX', wayTags)) return null
+
+  const members = relation.members
+  const tags = relation.tags ?? {}
+  const roadWays = members.filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role))
+
+  // ---- The road ----------------------------------------------------------
+
+  if (roadWays.length === 0) {
+    const roles = [...new Set(members.filter((m) => m.type === 'way').map((m) => m.role || '(empty)'))]
+    return roles.length > 0
+      ? `no member way has a road role (found: ${roles.join(', ')})`
+      : 'no member ways at all'
+  }
+
+  // ---- The limit ---------------------------------------------------------
+
+  if (tags.maxspeed && !parseMaxspeed(tags.maxspeed)) {
+    return `maxspeed "${tags.maxspeed}" is not a number this understands`
+  }
+
+  if (!parseMaxspeed(tags.maxspeed) && !limitFromRoadWays(members, wayTags)) {
+    const limits = roadWays.map((way) => parseMaxspeed(wayTags.get(way.ref)?.maxspeed))
+    const missing = limits.filter((limit) => limit === null).length
+    if (missing > 0) {
+      return `no maxspeed on the relation, and ${missing} of its ${roadWays.length} ` +
+        'road ways have none either'
+    }
+    const distinct = [...new Set(limits)].sort((a, b) => (a ?? 0) - (b ?? 0))
+    return `no maxspeed on the relation, and its road ways disagree (${distinct.join(', ')})`
+  }
+
+  // ---- The geometry ------------------------------------------------------
+
+  const withGeometry = roadWays.filter((m) => m.geometry)
+  if (withGeometry.length === 0) {
+    return `none of the ${roadWays.length} road ways came back with geometry`
+  }
+
+  const path = stitchWays(withGeometry.map((m) => m.geometry as LatLon[]))
+  if (path.length < 2) {
+    return `${withGeometry.length} road ways would not stitch into a single path`
+  }
+
+  const length = Math.round(polylineLength(path))
+  if (length < 500) return `section measures ${length} m, under the 500 m floor`
+
+  const devices = members.filter((m) => m.role === 'device').length
+  return `${devices} device member(s) and a ${length} m path, but no usable entry and exit`
 }
 
 // ---------------------------------------------------------------------------
