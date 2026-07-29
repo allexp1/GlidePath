@@ -13,11 +13,15 @@
 // Supabase - from your project dashboard, Settings > API
 // ---------------------------------------------------------------------------
 
-// Your project REST URL, e.g. https:/$()/abcdefghijklm.supabase.co
-// NOTE the $() in the scheme. xcconfig treats "//" as a comment even mid-line,
-// so the empty variable substitution $() is the standard way to keep the two
-// slashes. Copy the pattern exactly and only replace the host.
-SUPABASE_URL = https:/$()/YOUR-PROJECT-REF.supabase.co
+// Your project host, WITHOUT the https:// prefix.
+//
+// No scheme on purpose. An xcconfig file treats "//" as the start of a comment
+// wherever it appears, so writing https://abc.supabase.co would silently
+// truncate to "https:" and the app would refuse to start. Leaving the scheme
+// off avoids the problem entirely; the app adds https for you.
+//
+// Just the project ref on its own works too, e.g. SUPABASE_URL = abcdefghijklm
+SUPABASE_URL = YOUR-PROJECT-REF.supabase.co
 
 // The anon / publishable key. Safe to ship in a client binary: every table is
 // protected by row level security (see supabase/migrations). It grants public
