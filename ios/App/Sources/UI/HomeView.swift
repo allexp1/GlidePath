@@ -12,6 +12,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
 
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var selectedCamera: GlidePathCore.Camera?
 
     private var monitor: DriveMonitor? { model.monitor }
 
@@ -45,6 +46,13 @@ struct HomeView: View {
             .padding(.bottom, 16)
         }
         .animation(.smooth(duration: 0.4), value: monitor?.activeZone?.id)
+        .sheet(item: $selectedCamera) { tapped in
+            CameraDetailSheet(
+                camera: tapped,
+                units: model.settings.units,
+                from: model.location.latestFix?.coordinate
+            )
+        }
     }
 
     // MARK: - Controls
@@ -90,15 +98,25 @@ struct HomeView: View {
         Map(position: $camera) {
             UserAnnotation()
 
-            ForEach(monitor?.nearbyCameras.prefix(120) ?? [], id: \.id) { camera in
+            ForEach(monitor?.nearbyCameras.prefix(120) ?? [], id: \.id) { pin in
                 Annotation(
                     "",
                     coordinate: CLLocationCoordinate2D(
-                        latitude: camera.coordinate.latitude,
-                        longitude: camera.coordinate.longitude
+                        latitude: pin.coordinate.latitude,
+                        longitude: pin.coordinate.longitude
                     )
                 ) {
-                    CameraPin(type: camera.type, verified: camera.verified)
+                    // A Button rather than the map's selection binding: taps on
+                    // a custom annotation view are far more predictable this
+                    // way, and the hit area can be made bigger than the pin.
+                    Button {
+                        selectedCamera = pin
+                    } label: {
+                        CameraPin(type: pin.type, verified: pin.verified)
+                            .contentShape(Circle().inset(by: -8))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Camera details")
                 }
             }
         }
