@@ -38,17 +38,10 @@ struct RootView: View {
     private var main: some View {
         NavigationStack {
             HomeView()
-                .navigationTitle("GlidePath")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink {
-                            SettingsView()
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                    }
-                }
+                // No navigation bar on the map. A title strip over a full-bleed
+                // map costs vertical space and says nothing the driver needs;
+                // HomeView carries its own controls, correctly inset.
+                .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(isPresented: $showingSettings) {
                     CountryDownloadView()
                 }

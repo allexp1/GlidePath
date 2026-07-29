@@ -10,8 +10,9 @@ continuously what speed you need to hold to come out under the limit at the exit
 camera, and tells you: *"hold 80 for the next 4 kilometres."*
 
 Launch countries are **Israel**, where roughly 250 average-speed cameras across
-about 125 sections switch on from Q3 2026, and **Moldova**, where the problem is
-mobile traps, patchy rural coverage and no signal.
+about 125 sections switch on from Q3 2026, **Moldova**, where the problem is
+mobile traps, patchy rural coverage and no signal, and **Lithuania**, which has
+run average-speed enforcement long enough for the sections to be properly mapped.
 
 ---
 

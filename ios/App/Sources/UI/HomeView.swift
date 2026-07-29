@@ -20,6 +20,17 @@ struct HomeView: View {
             map
                 .ignoresSafeArea()
 
+            // The map deliberately runs under the status bar, which is why its
+            // own controls end up there too. These live outside the map, so they
+            // inset properly, and they match the app's glass styling instead of
+            // MapKit's stock chrome.
+            VStack(spacing: 0) {
+                topControls
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+
             VStack(spacing: 14) {
                 Spacer()
 
@@ -34,6 +45,43 @@ struct HomeView: View {
             .padding(.bottom, 16)
         }
         .animation(.smooth(duration: 0.4), value: monitor?.activeZone?.id)
+    }
+
+    // MARK: - Controls
+
+    private var topControls: some View {
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 10) {
+                Spacer()
+
+                Button {
+                    withAnimation(.smooth) {
+                        camera = .userLocation(fallback: .automatic)
+                    }
+                } label: {
+                    controlIcon("location.fill")
+                }
+                .glidePathGlassCapsule()
+                .accessibilityLabel("Centre the map on my location")
+
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    controlIcon("gearshape.fill")
+                }
+                .glidePathGlassCapsule()
+                .accessibilityLabel("Settings")
+            }
+        }
+    }
+
+    /// 44 points square, which is the smallest thing anyone should have to hit
+    /// while holding a phone in a moving car.
+    private func controlIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 44, height: 44)
     }
 
     // MARK: - Map
@@ -55,10 +103,10 @@ struct HomeView: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapUserLocationButton()
-            MapCompass()
-        }
+        // Stock controls are positioned inside the map's bounds, which ignore
+        // the safe area here, so they collide with the status bar. Replaced by
+        // topControls above.
+        .mapControlVisibility(.hidden)
     }
 
     // MARK: - Standby

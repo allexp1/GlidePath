@@ -142,7 +142,7 @@ deploy-functions: ## Deploy the nightly sync Edge Function
 # ---------------------------------------------------------------------------
 
 .PHONY: seed
-seed: ## Apply migrations and load Israel + Moldova camera data (the one setup command)
+seed: ## Apply migrations and load every enabled country (the one setup command)
 	@if [ ! -f supabase/.env ]; then \
 		echo "supabase/.env is missing. Run: cp supabase/.env.example supabase/.env"; \
 		exit 1; \
@@ -157,6 +157,7 @@ seed: ## Apply migrations and load Israel + Moldova camera data (the one setup c
 	}
 	$(MAKE) seed-israel
 	$(MAKE) seed-moldova
+	$(MAKE) seed-lithuania
 	@echo ""
 	@echo "Done. One thing the migrations cannot do for you:"
 	@echo ""
@@ -178,10 +179,15 @@ seed-israel: ## Pull Israel cameras from Overpass and merge the manual zone file
 seed-moldova: ## Pull Moldova cameras from Overpass
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts moldova
 
+.PHONY: seed-lithuania
+seed-lithuania: ## Pull Lithuania cameras and average-speed sections from Overpass
+	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts lithuania
+
 .PHONY: seed-dry-run
 seed-dry-run: ## Show what seeding would change without writing to the database
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts israel --dry-run
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts moldova --dry-run
+	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts lithuania --dry-run
 
 # ---------------------------------------------------------------------------
 # Housekeeping

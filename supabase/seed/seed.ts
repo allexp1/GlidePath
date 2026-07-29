@@ -47,6 +47,14 @@ const TARGETS: Record<string, Target> = {
     code: 'MD',
     iso: 'MD',
     name: 'Moldova'
+  },
+  lithuania: {
+    code: 'LT',
+    iso: 'LT',
+    name: 'Lithuania'
+    // No manual file: Lithuania's average-speed sections have been in place
+    // long enough to be mapped as proper enforcement relations, so Overpass
+    // should supply both the cameras and the zones.
   }
 }
 

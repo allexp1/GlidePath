@@ -148,8 +148,12 @@ control at all.
 
 ## Adding a country
 
+Lithuania is the worked example: `supabase/migrations/20260729130000_add_lithuania.sql`
+plus four lines in the seed's `TARGETS` and a Makefile target.
+
 1. Insert a row into `public.countries` with the ISO 3166-1 alpha-2 code.
-2. Add it to `TARGETS` in `supabase/seed/seed.ts`.
+2. Add it to `TARGETS` in `supabase/seed/seed.ts`, and add a `seed-<country>`
+   target to the Makefile.
 3. Run `make seed-dry-run` and read the warnings before writing anything.
 4. If the enforcement is too new for OpenStreetMap, add a manual zones file the
    way Israel does.
