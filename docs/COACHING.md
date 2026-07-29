@@ -60,9 +60,23 @@ Let `floor` be the safety floor for the zone (below).
 | Condition | Tier | Target |
 | --- | --- | --- |
 | Budget spent, or no distance left | Normal | the limit |
-| `maxRemainingAvg >= limit` | Normal | the limit |
-| `floor <= maxRemainingAvg < limit` | Tight | `maxRemainingAvg`, rounded **down** to 5 km/h |
+| `maxRemainingAvg >= limit - tolerance` | Normal | the limit |
+| `floor <= maxRemainingAvg < limit - tolerance` | Tight | `maxRemainingAvg`, rounded **down** to 5 km/h |
 | `maxRemainingAvg < floor` | Impossible | `floor`, plus a recovery |
+
+### Why the normal tier has a tolerance
+
+Hold exactly the posted limit and the allowance works out to exactly the limit
+at every point in the zone. `distanceLeft / remainingBudget` stays pinned to the
+limit the whole way, so comparing the two without slack sits on a knife edge and
+the tier flips on floating-point noise. Real GPS noise makes that worse, not
+better.
+
+Without the tolerance the app told a driver doing a perfectly legal 100 to slow
+to 95, then to hold 100, then to slow to 95 again, for the length of the zone.
+Half a km/h of slack is below anything a driver can hold and far below the
+enforcement margin on any real camera, and it costs a fraction of a second of
+margin across a whole section.
 
 Rounding is always down. Rounding 82.4 up to 85 would coach the driver into the
 fine the app exists to prevent; rounding down to 80 costs a few seconds.
@@ -171,5 +185,6 @@ All of these are `SafetyPolicy`:
 | Deviation distance | 60 m |
 | Deviation confirmation | 5 s |
 | Speed smoothing window | 4 s |
+| Limit tolerance | 0.5 km/h |
 | Worst usable fix accuracy | 50 m |
 | Zone entry geofence radius | 750 m |

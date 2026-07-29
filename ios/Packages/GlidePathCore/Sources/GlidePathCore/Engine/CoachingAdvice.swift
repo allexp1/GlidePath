@@ -92,7 +92,11 @@ public struct CoachingEngine: Sendable {
             )
         }
 
-        if maxRemaining >= zone.speedLimitKph {
+        // Tolerance, not exact comparison: a driver holding exactly the limit
+        // produces an allowance of exactly the limit at every point in the
+        // zone, and without slack here the tier flips on noise. See
+        // SafetyPolicy.limitToleranceKph.
+        if maxRemaining >= zone.speedLimitKph - policy.limitToleranceKph {
             return CoachingAdvice(
                 tier: .normal,
                 targetSpeedKph: suppressed ? nil : zone.speedLimitKph,

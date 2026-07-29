@@ -62,6 +62,13 @@ identifier_name:
     warning: 2
     error: 1
   excluded:
+    # Standard names from the haversine and great-circle bearing formulas.
+    # Renaming them to something "descriptive" would make the code harder to
+    # check against the formula, not easier.
+    - a
+    - c
+    - x
+    - y
     - id
     - dx
     - dy

@@ -35,7 +35,10 @@ extension View {
     }
 }
 
-private struct GlidePathGlassModifier<S: Shape>: ViewModifier {
+// InsettableShape rather than Shape: strokeBorder draws the line inside the
+// shape's bounds, which is what keeps the border from being clipped in half by
+// the shape's own edge. Every shape this is used with qualifies.
+private struct GlidePathGlassModifier<S: InsettableShape>: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     let shape: S
@@ -46,7 +49,7 @@ private struct GlidePathGlassModifier<S: Shape>: ViewModifier {
         if reduceTransparency {
             content
                 .background(.background.secondary, in: shape)
-                .overlay(shape.strokeBorder(.separator, lineWidth: 1))
+                .overlay(shape.strokeBorder(Color(uiColor: .separator), lineWidth: 1))
         } else {
             content.glassEffect(glass, in: shape)
         }

@@ -377,7 +377,11 @@ final class CountrySyncService {
 
     // MARK: - Cursors
 
-    private static func advanceCursor(
+    // nonisolated because these run inside GRDB's write closure, which is a
+    // plain synchronous context off the main actor. Without it the whole type's
+    // @MainActor isolation follows the static methods in and the call is a
+    // concurrency error.
+    private nonisolated static func advanceCursor(
         _ db: Database,
         country: String,
         resource: Resource,
@@ -396,7 +400,11 @@ final class CountrySyncService {
 
     /// An empty result still needs a cursor row, or the next sync sees an
     /// incomplete cursor set and falls back to a full download for nothing.
-    private static func ensureCursor(_ db: Database, country: String, resource: Resource) throws {
+    private nonisolated static func ensureCursor(
+        _ db: Database,
+        country: String,
+        resource: Resource
+    ) throws {
         try db.execute(
             sql: """
                 INSERT INTO sync_cursor (country_code, resource, last_updated_at)

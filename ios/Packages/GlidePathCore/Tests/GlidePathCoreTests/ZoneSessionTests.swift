@@ -19,6 +19,31 @@ final class ZoneSessionTests: XCTestCase {
         XCTAssertGreaterThan(outcome.marginSeconds, 0, "driving under the limit should leave time in hand")
     }
 
+    /// The regression test for a real bug: a driver holding exactly the posted
+    /// limit was being coached to slow down.
+    ///
+    /// Hold the limit exactly and the allowance works out to exactly the limit
+    /// at every single point in the zone. Comparing it to the limit without any
+    /// slack therefore lands on a knife edge, and the tier flipped on
+    /// floating-point noise, producing "hold 95" at a driver doing a perfectly
+    /// legal 100. Over a whole zone that is the app nagging someone who is
+    /// doing nothing wrong, which is worse than saying nothing at all.
+    func testHoldingExactlyTheLimitIsNeverCoachedToSlowDown() {
+        let zone = TestFixtures.zone(lengthMeters: 10_000, limitKph: 100)
+        let result = TestFixtures.drive(zone, steps: [.drive(speedKph: 100, distanceMeters: 10_000)])
+
+        XCTAssertFalse(
+            result.tiers.contains(.tight),
+            "a driver holding the posted limit must never be told to slow down"
+        )
+        XCTAssertFalse(result.tiers.contains(.impossible))
+        XCTAssertTrue(result.tiers.allSatisfy { $0 == .normal })
+
+        for advice in result.advice {
+            XCTAssertEqual(advice.targetSpeedKph, 100)
+        }
+    }
+
     /// The entry clock must start at the entry line, not at the geofence
     /// wake-up several hundred metres earlier. Starting early inflates elapsed
     /// time, which inflates the allowance, which coaches the driver too fast.

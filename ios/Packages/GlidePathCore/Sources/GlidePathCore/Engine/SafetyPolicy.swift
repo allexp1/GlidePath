@@ -19,6 +19,21 @@ public struct SafetyPolicy: Sendable, Equatable {
     /// quiet rather than shouting a target they cannot act on.
     public var jamSuppressionKph: Double
 
+    /// How close to the limit still counts as being at the limit.
+    ///
+    /// A driver holding exactly the posted limit sits on a knife edge: the
+    /// allowance works out to precisely the limit at every point in the zone,
+    /// so the tier flips on floating-point noise and the app oscillates between
+    /// "you are fine, hold 100" and "hold 95". Real GPS noise makes it worse,
+    /// not better, so the tolerance has to be a real speed rather than an
+    /// epsilon.
+    ///
+    /// Half a km/h is below anything a driver can hold and far below the
+    /// enforcement margin on any real camera. The cost of getting it wrong is a
+    /// fraction of a second of margin across a whole zone; the cost of not
+    /// having it is an app that nags people who are doing nothing wrong.
+    public var limitToleranceKph: Double
+
     /// How far off the zone's road path counts as having left it.
     public var deviationDistanceMeters: Double
 
@@ -41,6 +56,7 @@ public struct SafetyPolicy: Sendable, Equatable {
         absoluteFloorKph: Double = 30,
         fractionOfLimitFloor: Double = 0.5,
         jamSuppressionKph: Double = 10,
+        limitToleranceKph: Double = 0.5,
         deviationDistanceMeters: Double = 60,
         deviationConfirmationSeconds: TimeInterval = 5,
         speedSmoothingWindow: TimeInterval = 4,
@@ -50,6 +66,7 @@ public struct SafetyPolicy: Sendable, Equatable {
         self.absoluteFloorKph = absoluteFloorKph
         self.fractionOfLimitFloor = fractionOfLimitFloor
         self.jamSuppressionKph = jamSuppressionKph
+        self.limitToleranceKph = limitToleranceKph
         self.deviationDistanceMeters = deviationDistanceMeters
         self.deviationConfirmationSeconds = deviationConfirmationSeconds
         self.speedSmoothingWindow = speedSmoothingWindow
