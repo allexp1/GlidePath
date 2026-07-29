@@ -1,5 +1,7 @@
 # GlidePath
 
+[![CI](https://github.com/allexp1/GlidePath/actions/workflows/ci.yml/badge.svg)](https://github.com/allexp1/GlidePath/actions/workflows/ci.yml)
+
 A background co-pilot for speed cameras. Not a navigator.
 
 You keep using Waze or Google Maps. GlidePath runs quietly behind them and
