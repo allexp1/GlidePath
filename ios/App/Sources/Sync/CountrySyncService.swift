@@ -1,0 +1,406 @@
+import Foundation
+import GRDB
+import GlidePathCore
+import Observation
+
+/// Downloads countries and keeps them current.
+///
+/// Two modes, and the decision between them is the interesting part:
+///
+/// - **Delta.** Ask for everything changed since the last cursor. A few rows on
+///   a normal day, which is what makes syncing on launch acceptable on mobile
+///   data.
+/// - **Full.** Wipe the country and download it again. Used for a first
+///   install, and whenever a delta can no longer be trusted.
+///
+/// A delta stops being trustworthy when the server raises
+/// `min_compatible_version` above what this phone holds. That happens when a
+/// change is not expressible as a row update, such as zones being re-split or a
+/// systematic geometry fix. Without the check, an install left in a drawer for a
+/// year would apply a delta on top of a dataset whose meaning had changed
+/// underneath it, and would be confidently wrong rather than obviously stale.
+@MainActor
+@Observable
+final class CountrySyncService {
+    struct CountryStatus: Identifiable, Equatable, Sendable {
+        let code: String
+        let name: String
+        let serverVersion: Int
+        let installedVersion: Int?
+        let cameraCount: Int
+        let zoneCount: Int
+        let installedAt: Date?
+
+        var id: String { code }
+        var isInstalled: Bool { installedVersion != nil }
+        var hasUpdate: Bool {
+            guard let installedVersion else { return false }
+            return serverVersion > installedVersion
+        }
+    }
+
+    enum Progress: Equatable, Sendable {
+        case idle
+        case checking
+        case downloading(country: String, fraction: Double)
+        case failed(country: String, message: String)
+    }
+
+    private(set) var countries: [CountryStatus] = []
+    private(set) var progress: Progress = .idle
+    private(set) var lastCheckedAt: Date?
+
+    private let database: LocalDatabase
+    private let client: SupabaseREST
+
+    init(database: LocalDatabase, client: SupabaseREST) {
+        self.database = database
+        self.client = client
+    }
+
+    // MARK: - Catalogue
+
+    /// Refreshes the download list. Falls back to whatever is on disk when
+    /// there is no signal, so the screen is never empty in a dead spot.
+    func refreshCatalogue() async {
+        progress = .checking
+        defer { progress = .idle }
+
+        do {
+            let remote: [CountryDTO] = try await client.fetchAll(
+                CountryDTO.self,
+                from: "countries_public"
+            )
+            try await storeCatalogue(remote)
+            lastCheckedAt = Date()
+        } catch {
+            progress = .failed(country: "", message: error.localizedDescription)
+        }
+
+        countries = (try? await loadStatuses()) ?? []
+    }
+
+    private func storeCatalogue(_ remote: [CountryDTO]) async throws {
+        try await database.pool.write { db in
+            for country in remote {
+                try db.execute(
+                    sql: """
+                        INSERT INTO country
+                            (code, name, dataset_version, min_compatible_version, camera_count, zone_count)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(code) DO UPDATE SET
+                            name = excluded.name,
+                            dataset_version = excluded.dataset_version,
+                            min_compatible_version = excluded.min_compatible_version,
+                            camera_count = excluded.camera_count,
+                            zone_count = excluded.zone_count
+                        """,
+                    arguments: [
+                        country.code,
+                        country.name,
+                        country.dataset_version,
+                        country.min_compatible_version,
+                        country.camera_count,
+                        country.zone_count
+                    ]
+                )
+            }
+        }
+    }
+
+    private func loadStatuses() async throws -> [CountryStatus] {
+        try await database.pool.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM country ORDER BY name").map { row in
+                CountryStatus(
+                    code: row["code"],
+                    name: row["name"],
+                    serverVersion: row["dataset_version"],
+                    installedVersion: row["installed_version"],
+                    cameraCount: row["camera_count"],
+                    zoneCount: row["zone_count"],
+                    installedAt: row["installed_at"]
+                )
+            }
+        }
+    }
+
+    // MARK: - Syncing
+
+    /// Brings every installed country up to date. Called on launch.
+    func syncInstalledCountries() async {
+        await refreshCatalogue()
+        for country in countries where country.isInstalled {
+            await sync(country.code)
+        }
+    }
+
+    func download(_ code: String) async {
+        await sync(code, forceFull: true)
+    }
+
+    func remove(_ code: String) async {
+        try? await database.erase(country: code)
+        countries = (try? await loadStatuses()) ?? []
+    }
+
+    func sync(_ code: String, forceFull: Bool = false) async {
+        do {
+            let plan = try await plan(for: code, forceFull: forceFull)
+
+            switch plan {
+            case .upToDate:
+                return
+
+            case .full:
+                progress = .downloading(country: code, fraction: 0)
+                try await database.erase(country: code)
+                try await pull(code, since: nil)
+
+            case let .delta(since):
+                progress = .downloading(country: code, fraction: 0)
+                try await pull(code, since: since)
+            }
+
+            try await markInstalled(code)
+            countries = (try? await loadStatuses()) ?? []
+            progress = .idle
+        } catch {
+            progress = .failed(country: code, message: error.localizedDescription)
+        }
+    }
+
+    private enum SyncPlan {
+        case upToDate
+        case full
+        /// Ask for everything changed strictly after this timestamp.
+        case delta(since: Date)
+    }
+
+    private func plan(for code: String, forceFull: Bool) async throws -> SyncPlan {
+        if forceFull { return .full }
+
+        let row = try await database.pool.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM country WHERE code = ?", arguments: [code])
+        }
+        guard let row, let installed = row["installed_version"] as Int? else {
+            return .full
+        }
+
+        let serverVersion: Int = row["dataset_version"]
+        let minimumCompatible: Int = row["min_compatible_version"]
+
+        // The stale-install fallback.
+        if installed < minimumCompatible { return .full }
+        if installed >= serverVersion { return .upToDate }
+
+        // The cursor is the oldest of the three, because a partial sync may
+        // have written one resource and not another. Starting from the oldest
+        // re-fetches a few rows rather than missing any.
+        let cursors = try await database.pool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT resource, last_updated_at FROM sync_cursor WHERE country_code = ?",
+                arguments: [code]
+            )
+        }
+
+        let timestamps = cursors.compactMap { $0["last_updated_at"] as Date? }
+        guard timestamps.count == Resource.allCases.count, let oldest = timestamps.min() else {
+            return .full
+        }
+        return .delta(since: oldest)
+    }
+
+    private enum Resource: String, CaseIterable {
+        case zones
+        case cameras
+        case restStops
+    }
+
+    /// Pulls each resource and writes it, advancing that resource's cursor only
+    /// after its rows are committed. A sync interrupted half way therefore
+    /// resumes rather than silently losing the rows it had not reached.
+    private func pull(_ code: String, since: Date?) async throws {
+        let filters = ["country_code": "eq.\(code)"]
+
+        progress = .downloading(country: code, fraction: 0.05)
+        let zones: [ZoneDTO] = try await client.fetchAll(
+            ZoneDTO.self, from: "zones_public", filters: filters, since: since
+        )
+        try await write(zones: zones, country: code)
+
+        progress = .downloading(country: code, fraction: 0.4)
+        let cameras: [CameraDTO] = try await client.fetchAll(
+            CameraDTO.self, from: "cameras_public", filters: filters, since: since
+        )
+        try await write(cameras: cameras, country: code)
+
+        progress = .downloading(country: code, fraction: 0.85)
+        let stops: [RestStopDTO] = try await client.fetchAll(
+            RestStopDTO.self, from: "rest_stops_public", filters: filters, since: since
+        )
+        try await write(restStops: stops, country: code)
+
+        progress = .downloading(country: code, fraction: 1)
+    }
+
+    private func write(zones: [ZoneDTO], country: String) async throws {
+        try await database.pool.write { db in
+            for zone in zones {
+                try db.execute(
+                    sql: """
+                        INSERT INTO zone
+                            (id, country_code, name, road_ref,
+                             entry_latitude, entry_longitude, exit_latitude, exit_longitude,
+                             distance_meters, speed_limit_kph, minimum_speed_kph, direction_degrees,
+                             verified, path_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            name = excluded.name,
+                            road_ref = excluded.road_ref,
+                            entry_latitude = excluded.entry_latitude,
+                            entry_longitude = excluded.entry_longitude,
+                            exit_latitude = excluded.exit_latitude,
+                            exit_longitude = excluded.exit_longitude,
+                            distance_meters = excluded.distance_meters,
+                            speed_limit_kph = excluded.speed_limit_kph,
+                            minimum_speed_kph = excluded.minimum_speed_kph,
+                            direction_degrees = excluded.direction_degrees,
+                            verified = excluded.verified,
+                            path_json = excluded.path_json,
+                            updated_at = excluded.updated_at
+                        """,
+                    arguments: [
+                        zone.id, zone.country_code, zone.name, zone.road_ref,
+                        zone.entry_latitude, zone.entry_longitude,
+                        zone.exit_latitude, zone.exit_longitude,
+                        zone.distance_meters, zone.speed_limit_kph,
+                        zone.minimum_speed_kph, zone.direction_degrees,
+                        zone.verified, zone.pathJSON, zone.updated_at
+                    ]
+                )
+            }
+
+            if let latest = zones.map(\.updated_at).max() {
+                try Self.advanceCursor(db, country: country, resource: .zones, to: latest)
+            } else {
+                try Self.ensureCursor(db, country: country, resource: .zones)
+            }
+        }
+    }
+
+    private func write(cameras: [CameraDTO], country: String) async throws {
+        try await database.pool.write { db in
+            for camera in cameras {
+                try db.execute(
+                    sql: """
+                        INSERT INTO camera
+                            (id, country_code, latitude, longitude, type,
+                             direction_degrees, speed_limit_kph, zone_id, verified, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            latitude = excluded.latitude,
+                            longitude = excluded.longitude,
+                            type = excluded.type,
+                            direction_degrees = excluded.direction_degrees,
+                            speed_limit_kph = excluded.speed_limit_kph,
+                            zone_id = excluded.zone_id,
+                            verified = excluded.verified,
+                            updated_at = excluded.updated_at
+                        """,
+                    arguments: [
+                        camera.id, camera.country_code, camera.latitude, camera.longitude,
+                        camera.type, camera.direction_degrees, camera.speed_limit_kph,
+                        camera.zone_id, camera.verified, camera.updated_at
+                    ]
+                )
+            }
+
+            if let latest = cameras.map(\.updated_at).max() {
+                try Self.advanceCursor(db, country: country, resource: .cameras, to: latest)
+            } else {
+                try Self.ensureCursor(db, country: country, resource: .cameras)
+            }
+        }
+    }
+
+    private func write(restStops: [RestStopDTO], country: String) async throws {
+        try await database.pool.write { db in
+            for stop in restStops {
+                try db.execute(
+                    sql: """
+                        INSERT INTO rest_stop
+                            (id, country_code, zone_id, name, latitude, longitude,
+                             kind, distance_along_meters, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            zone_id = excluded.zone_id,
+                            name = excluded.name,
+                            latitude = excluded.latitude,
+                            longitude = excluded.longitude,
+                            kind = excluded.kind,
+                            distance_along_meters = excluded.distance_along_meters,
+                            updated_at = excluded.updated_at
+                        """,
+                    arguments: [
+                        stop.id, stop.country_code, stop.zone_id, stop.name,
+                        stop.latitude, stop.longitude, stop.kind,
+                        stop.distance_along_meters, stop.updated_at
+                    ]
+                )
+            }
+
+            if let latest = restStops.map(\.updated_at).max() {
+                try Self.advanceCursor(db, country: country, resource: .restStops, to: latest)
+            } else {
+                try Self.ensureCursor(db, country: country, resource: .restStops)
+            }
+        }
+    }
+
+    private func markInstalled(_ code: String) async throws {
+        try await database.pool.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE country
+                       SET installed_version = dataset_version,
+                           installed_at = ?
+                     WHERE code = ?
+                    """,
+                arguments: [Date(), code]
+            )
+        }
+    }
+
+    // MARK: - Cursors
+
+    private static func advanceCursor(
+        _ db: Database,
+        country: String,
+        resource: Resource,
+        to date: Date
+    ) throws {
+        try db.execute(
+            sql: """
+                INSERT INTO sync_cursor (country_code, resource, last_updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(country_code, resource) DO UPDATE SET
+                    last_updated_at = max(excluded.last_updated_at, sync_cursor.last_updated_at)
+                """,
+            arguments: [country, resource.rawValue, date]
+        )
+    }
+
+    /// An empty result still needs a cursor row, or the next sync sees an
+    /// incomplete cursor set and falls back to a full download for nothing.
+    private static func ensureCursor(_ db: Database, country: String, resource: Resource) throws {
+        try db.execute(
+            sql: """
+                INSERT INTO sync_cursor (country_code, resource, last_updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(country_code, resource) DO NOTHING
+                """,
+            arguments: [country, resource.rawValue, Date(timeIntervalSince1970: 0)]
+        )
+    }
+}

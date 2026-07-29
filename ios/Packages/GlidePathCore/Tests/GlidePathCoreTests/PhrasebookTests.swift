@@ -28,10 +28,10 @@ final class PhrasebookTests: XCTestCase {
     }
 
     func testDurationsAreRoundedToSomethingSayable() {
-        XCTAssertEqual(phrasebook.durationPhrase(38), "40 second")
-        XCTAssertEqual(phrasebook.durationPhrase(4), "10 second")
+        XCTAssertEqual(phrasebook.durationPhrase(38), "40 seconds")
+        XCTAssertEqual(phrasebook.durationPhrase(4), "10 seconds", "a floor of ten, so a pause sounds real")
         XCTAssertEqual(phrasebook.durationPhrase(62), "one minute")
-        XCTAssertEqual(phrasebook.durationPhrase(108), "2 minute")
+        XCTAssertEqual(phrasebook.durationPhrase(108), "2 minutes")
     }
 
     func testImperialUnitsConvert() {

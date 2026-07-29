@@ -77,8 +77,11 @@ public struct Phrasebook: Sendable {
             let place = stop.name ?? placeNoun(for: stop.kind)
             let away = distancePhrase(distanceToStop)
             let pause = durationPhrase(seconds)
+            // "A stop of 40 seconds" rather than "a 40 second stop": the noun
+            // form is the only one that stays grammatical across "40 seconds",
+            // "one minute" and "2 minutes".
             return "You cannot make this one by driving. "
-                + "There is a \(place) in \(away). A \(pause) stop puts you back under."
+                + "There is a \(place) in \(away). A stop of \(pause) puts you back under."
 
         case .unrecoverable?:
             let over = max(advice.allowance.projectedFinalAverageKph - advice.speedLimitKph, 0)
@@ -201,9 +204,9 @@ public struct Phrasebook: Sendable {
             // To the nearest ten seconds. Nobody can act on "37 seconds", and
             // the floor of ten stops a trivial pause sounding like nothing.
             let rounded = max(Int((Double(total) / 10).rounded()) * 10, 10)
-            return "\(rounded) second"
+            return "\(rounded) seconds"
         }
         let minutes = Int((Double(total) / 60).rounded())
-        return minutes == 1 ? "one minute" : "\(minutes) minute"
+        return minutes == 1 ? "one minute" : "\(minutes) minutes"
     }
 }
