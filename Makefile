@@ -155,9 +155,22 @@ seed: ## Apply migrations and load every enabled country (the one setup command)
 		echo "  make link PROJECT_REF=<your-project-ref>"; \
 		exit 1; \
 	}
-	$(MAKE) seed-israel
-	$(MAKE) seed-moldova
-	$(MAKE) seed-lithuania
+	@# Each country may fail without taking the others with it. A country whose
+	@# data is missing upstream is a fact about OpenStreetMap rather than a broken
+	@# setup, and it must not stop the ones that did load from being usable - or
+	@# stop `make seed && make project` from reaching `make project`.
+	@failed=""; \
+	for country in israel moldova lithuania; do \
+		echo ""; \
+		(cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts $$country) \
+			|| failed="$$failed $$country"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		echo ""; \
+		echo "  Loaded nothing for:$$failed"; \
+		echo "  The countries that did load are fine and the app will work with them."; \
+		echo "  To find out why, run:  make inspect CODE=<XX>"; \
+	fi
 	@echo ""
 	@echo "Done. One thing the migrations cannot do for you:"
 	@echo ""
@@ -192,6 +205,16 @@ seed-country: ## Load any country by ISO code, e.g. make seed-country CODE=PL
 		exit 1; \
 	fi; \
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts "$$code"
+
+.PHONY: inspect
+inspect: ## Explain why a country loaded nothing, e.g. make inspect CODE=LT
+	@code=$$(printf '%s' "$(CODE)" | tr -d '<>'); \
+	if [ -z "$$code" ]; then \
+		echo "Usage: make inspect CODE=<ISO 3166-1 alpha-2>"; \
+		echo "  e.g. make inspect CODE=LT"; \
+		exit 1; \
+	fi; \
+	cd supabase/seed && deno run --allow-net --allow-read inspect.ts "$$code"
 
 .PHONY: seed-dry-run
 seed-dry-run: ## Show what seeding would change without writing to the database

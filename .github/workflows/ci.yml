@@ -133,7 +133,7 @@ jobs:
 
       - name: Type check the seed CLI
         working-directory: supabase/seed
-        run: deno check seed.ts
+        run: deno check seed.ts inspect.ts
 
       # Lint is syntactic and resolves no imports, so one pass from the root
       # covers both.
