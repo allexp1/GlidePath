@@ -55,8 +55,10 @@ struct SettingsView: View {
             }
 
             Section {
-                NavigationLink("Offline data") {
+                NavigationLink {
                     CountryDownloadView()
+                } label: {
+                    LabeledContent("Countries", value: downloadSummary)
                 }
                 LabeledContent("Location access", value: locationSummary)
             } header: {
@@ -75,6 +77,17 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+    }
+
+    /// How many countries this phone actually holds, so the row answers the
+    /// question without needing to be tapped.
+    private var downloadSummary: String {
+        let installed = model.sync?.countries.filter(\.isInstalled) ?? []
+        switch installed.count {
+        case 0: return "None downloaded"
+        case 1: return installed[0].name
+        default: return "\(installed.count) downloaded"
+        }
     }
 
     private var locationSummary: String {

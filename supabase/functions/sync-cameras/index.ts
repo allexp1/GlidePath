@@ -52,10 +52,12 @@ Deno.serve(async (request: Request) => {
     // No body, or not JSON. Both mean "run everything", which is what cron sends.
   }
 
+  // sync_enabled, not enabled. Every country is listed in the app; only a
+  // handful should be pulled from Overpass nightly.
   const { data, error } = await client
     .from('countries')
     .select('code, name, overpass_iso_code')
-    .eq('enabled', true)
+    .eq('sync_enabled', true)
 
   if (error) {
     return json({ error: `could not list countries: ${error.message}` }, 500)
@@ -66,7 +68,14 @@ Deno.serve(async (request: Request) => {
   )
 
   if (countries.length === 0) {
-    return json({ error: only ? `country ${only} is not enabled` : 'no countries enabled' }, 404)
+    return json(
+      {
+        error: only
+          ? `country ${only} does not have sync_enabled set`
+          : 'no countries have sync_enabled set'
+      },
+      404
+    )
   }
 
   const reports: SyncReport[] = []

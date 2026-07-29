@@ -183,6 +183,16 @@ seed-moldova: ## Pull Moldova cameras from Overpass
 seed-lithuania: ## Pull Lithuania cameras and average-speed sections from Overpass
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts lithuania
 
+.PHONY: seed-country
+seed-country: ## Load any country by ISO code, e.g. make seed-country CODE=PL
+	@code=$$(printf '%s' "$(CODE)" | tr -d '<>'); \
+	if [ -z "$$code" ]; then \
+		echo "Usage: make seed-country CODE=<ISO 3166-1 alpha-2>"; \
+		echo "  e.g. make seed-country CODE=PL"; \
+		exit 1; \
+	fi; \
+	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts "$$code"
+
 .PHONY: seed-dry-run
 seed-dry-run: ## Show what seeding would change without writing to the database
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts israel --dry-run

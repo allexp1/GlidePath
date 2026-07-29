@@ -31,11 +31,32 @@ final class CountrySyncService {
         let zoneCount: Int
         let installedAt: Date?
 
+        /// When the server last pulled this country from OpenStreetMap. Nil
+        /// means never, which is a different thing from "mapped and empty".
+        let lastSyncedAt: Date?
+
         var id: String { code }
         var isInstalled: Bool { installedVersion != nil }
         var hasUpdate: Bool {
             guard let installedVersion else { return false }
             return serverVersion > installedVersion
+        }
+
+        /// Something worth downloading.
+        var hasData: Bool { cameraCount > 0 || zoneCount > 0 }
+
+        /// Checked, and genuinely nothing there. Worth saying out loud so the
+        /// driver does not think the app is broken.
+        var isKnownEmpty: Bool { lastSyncedAt != nil && !hasData }
+
+        /// Nobody has pulled this country yet, so we simply do not know.
+        var isUnsurveyed: Bool { lastSyncedAt == nil && !hasData }
+
+        /// A crude size estimate for the download. Each camera is a handful of
+        /// doubles and a UUID; zones add a polyline, which dominates. Deliberately
+        /// generous, because promising 2 MB and using 6 is the annoying direction.
+        var estimatedBytes: Int {
+            cameraCount * 180 + zoneCount * 2_400
         }
     }
 
@@ -91,14 +112,16 @@ final class CountrySyncService {
                 try db.execute(
                     sql: """
                         INSERT INTO country
-                            (code, name, dataset_version, min_compatible_version, camera_count, zone_count)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (code, name, dataset_version, min_compatible_version,
+                             camera_count, zone_count, last_synced_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(code) DO UPDATE SET
                             name = excluded.name,
                             dataset_version = excluded.dataset_version,
                             min_compatible_version = excluded.min_compatible_version,
                             camera_count = excluded.camera_count,
-                            zone_count = excluded.zone_count
+                            zone_count = excluded.zone_count,
+                            last_synced_at = excluded.last_synced_at
                         """,
                     arguments: [
                         country.code,
@@ -106,7 +129,8 @@ final class CountrySyncService {
                         country.datasetVersion,
                         country.minCompatibleVersion,
                         country.cameraCount,
-                        country.zoneCount
+                        country.zoneCount,
+                        country.lastSyncedAt
                     ]
                 )
             }
@@ -123,7 +147,8 @@ final class CountrySyncService {
                     installedVersion: row["installed_version"],
                     cameraCount: row["camera_count"],
                     zoneCount: row["zone_count"],
-                    installedAt: row["installed_at"]
+                    installedAt: row["installed_at"],
+                    lastSyncedAt: row["last_synced_at"]
                 )
             }
         }

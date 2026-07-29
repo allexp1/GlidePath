@@ -33,7 +33,9 @@ interface Target {
   manualZonesFile?: string
 }
 
-const TARGETS: Record<string, Target> = {
+/// Friendly names for the countries that need something beyond their ISO code -
+/// currently just a manual zones file. Everything else is reachable by code.
+const ALIASES: Record<string, Target> = {
   israel: {
     code: 'IL',
     iso: 'IL',
@@ -61,14 +63,15 @@ const TARGETS: Record<string, Target> = {
 async function main(): Promise<number> {
   const args = [...Deno.args]
   const dryRun = args.includes('--dry-run')
-  const name = args.find((arg) => !arg.startsWith('--'))
+  const requested = args.find((arg) => !arg.startsWith('--'))
 
-  if (!name || !(name in TARGETS)) {
-    console.error(`Usage: seed.ts <${Object.keys(TARGETS).join('|')}> [--dry-run]`)
+  if (!requested) {
+    console.error('Usage: seed.ts <country> [--dry-run]')
+    console.error('')
+    console.error(`  <country> is an ISO 3166-1 alpha-2 code (LT, FR, PL) or one of:`)
+    console.error(`  ${Object.keys(ALIASES).join(', ')}`)
     return 2
   }
-
-  const target = TARGETS[name]
 
   // The Makefile runs this from supabase/seed, so ../.env is supabase/.env.
   await load({ envPath: '../.env', export: true })
@@ -77,13 +80,16 @@ async function main(): Promise<number> {
   if (!credentials) return 1
   const { url, key } = credentials
 
+  const client = createClient(url, key, { auth: { persistSession: false } })
+
+  const target = await resolveTarget(client, requested)
+  if (!target) return 2
+
   let manualZones: ManualZone[] = []
   if (target.manualZonesFile) {
     manualZones = await readManualZones(target.manualZonesFile)
     console.log(`Loaded ${manualZones.length} hand-maintained ${target.name} sections`)
   }
-
-  const client = createClient(url, key, { auth: { persistSession: false } })
 
   console.log(`Seeding ${target.name} (${target.code})${dryRun ? ' - dry run' : ''}`)
   console.log('Overpass queries can take a couple of minutes. This is normal.')
@@ -118,7 +124,60 @@ async function main(): Promise<number> {
     return 1
   }
 
+  if (!dryRun) {
+    console.log('')
+    console.log(`  ${target.name} is now downloadable in the app.`)
+    console.log('  To also keep it refreshed by the nightly job, run once:')
+    console.log(`    update public.countries set sync_enabled = true where code = '${target.code}';`)
+  }
+
   return 0
+}
+
+/**
+ * Turns whatever was on the command line into a country to sync.
+ *
+ * An alias wins if there is one, because aliases carry the extra configuration
+ * a bare code cannot. Otherwise a two-letter code is looked up in the countries
+ * table, which is the authoritative catalogue: that way adding a country is a
+ * migration, not a code change.
+ */
+async function resolveTarget(
+  // deno-lint-ignore no-explicit-any
+  client: any,
+  requested: string
+): Promise<Target | null> {
+  const alias = ALIASES[requested.toLowerCase()]
+  if (alias) return alias
+
+  if (!/^[A-Za-z]{2}$/.test(requested)) {
+    console.error(`"${requested}" is neither an ISO 3166-1 alpha-2 code nor a known alias.`)
+    console.error(`Known aliases: ${Object.keys(ALIASES).join(', ')}`)
+    return null
+  }
+
+  const code = requested.toUpperCase()
+  const { data, error } = await client
+    .from('countries')
+    .select('code, name, overpass_iso_code')
+    .eq('code', code)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`Could not look up ${code}: ${error.message}`)
+    return null
+  }
+  if (!data) {
+    console.error(`${code} is not in the countries table.`)
+    console.error('Has the all-countries migration been applied? Try: supabase db push')
+    return null
+  }
+
+  return {
+    code: data.code,
+    iso: data.overpass_iso_code ?? data.code,
+    name: data.name
+  }
 }
 
 /**

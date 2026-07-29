@@ -145,6 +145,15 @@ final class LocalDatabase: @unchecked Sendable {
             }
         }
 
+        // With every country in the catalogue, most of them have no data. The
+        // download list has to distinguish "nobody has mapped any cameras here"
+        // from "we have never looked", and only the server knows which.
+        migrator.registerMigration("v2_country_last_synced") { db in
+            try db.alter(table: "country") { table in
+                table.add(column: "last_synced_at", .datetime)
+            }
+        }
+
         return migrator
     }
 

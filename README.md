@@ -235,6 +235,57 @@ months after enforcement starts. **That file ships empty on purpose** — see
 [docs/ISRAEL_ZONES.md](docs/ISRAEL_ZONES.md) for the format and for why
 inventing plausible coordinates would be worse than having none.
 
+### Countries
+
+Every country is in the catalogue — 243 of them, generated from the ICU data
+bundled with Node rather than typed out, so the names are spelled the way the
+world spells them. Regenerate with:
+
+```bash
+node scripts/generate-countries-migration.mjs
+```
+
+Withdrawn ISO codes are excluded, and not merely for tidiness: ICU resolves
+several of them onto the name of whatever replaced them, so RH and ZW both come
+back as "Zimbabwe". Two rows for one place, one of which can never have data,
+reads as a bug in the app rather than as a quirk of a standard. The generator
+refuses to write a file containing a duplicate name and CI asserts the same thing
+against a real database. Territories with no public roads are dropped
+(Antarctica, Bouvet Island, and Sark, where cars are banned). XK is kept although
+ISO never assigned it, because that is what OpenStreetMap and Geofabrik call
+Kosovo.
+
+**Being listed is not the same as having data.** Two columns, deliberately:
+
+| column | means |
+| --- | --- |
+| `enabled` | offer this country in the app's download list |
+| `sync_enabled` | include it in the nightly Overpass job |
+
+Every country has `enabled`; almost none have `sync_enabled`. Overpass is run by
+volunteers and its usage policy rules out bulk extraction, so querying two
+hundred countries a night would be an abuse of a free service. Load one on
+demand instead:
+
+```bash
+make seed-country CODE=PL
+```
+
+The app distinguishes three states rather than lumping them together, because
+somebody who searches for their country and finds nothing needs to know whether
+the answer is "no cameras here" or "nobody has looked yet" — only one of those is
+worth waiting for. A country with `last_synced_at` set and no cameras is shown as
+mapped and empty; one with no `last_synced_at` is shown as not surveyed yet.
+
+### Before switching a country on, check whether it is legal there
+
+Not a formality. Germany's §23(1c) StVO prohibits operating a camera-warning
+device while driving; Austria and Switzerland prohibit the devices outright;
+France requires that such apps show broad "zones de danger" rather than exact
+camera locations. The catalogue lists every country because the list is
+geography, but shipping alerts into a jurisdiction needs a per-country policy and
+legal advice this repository does not contain.
+
 ### Privacy
 
 There is no account, no analytics and no telemetry. Location never leaves the

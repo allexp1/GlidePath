@@ -228,12 +228,52 @@ jobs:
              where enumtypid = 'public.camera_type'::regtype;
           "
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
-            select code, dataset_version from public.countries order by code;
+            select count(*) as countries,
+                   count(*) filter (where sync_enabled) as syncing
+              from public.countries;
+          "
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            select code, name, dataset_version from public.countries
+             where sync_enabled order by code;
           "
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
             select table_name from information_schema.views
              where table_schema = 'public' order by table_name;
           "
+
+      # The catalogue is generated from ICU, which carries withdrawn codes as
+      # well as live ones and resolves several of them onto the name of whatever
+      # replaced them: RH and ZW both come back as 'Zimbabwe'. That is two rows
+      # for one place, one of which can never have data, and in the app it reads
+      # as a bug rather than as a quirk of a standard.
+      - name: The country catalogue must be complete and unambiguous
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            declare
+              total int;
+              dupes text;
+            begin
+              select count(*) into total from public.countries;
+              if total < 240 then
+                raise exception 'only % countries in the catalogue, expected the full list', total;
+              end if;
+
+              select string_agg(name || ' (' || codes || ')', ', ') into dupes
+                from (
+                  select name, string_agg(code, '/' order by code) as codes
+                    from public.countries
+                   group by name
+                  having count(*) > 1
+                ) clashes;
+
+              if dupes is not null then
+                raise exception 'duplicate country names: %', dupes;
+              end if;
+            end
+            \$\$;
+          "
+          echo "Catalogue is complete and every country name is unique."
 
       # Applying the schema proves the SQL is valid. It does not prove the app's
       # queries work against it. The client pages with
