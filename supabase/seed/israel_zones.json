@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Israel's average-speed sections, entered by hand from published police and",
+    "Netivei Israel announcements. OpenStreetMap will not carry these until well",
+    "after enforcement begins, so this file is the only source until it does.",
+    "",
+    "This ships EMPTY on purpose. Every entry here becomes a live instruction to",
+    "a driver about how fast to travel, so nothing goes in it that has not been",
+    "read off an official announcement or driven and verified. Inventing",
+    "plausible coordinates would produce an app that coaches confidently against",
+    "a section that is not there.",
+    "",
+    "See israel_zones.example.json for a filled-in entry, and",
+    "docs/ISRAEL_ZONES.md for the field reference and how to trace a path.",
+    "",
+    "Add sections here, then run:  make seed-israel"
+  ],
+  "zones": []
+}

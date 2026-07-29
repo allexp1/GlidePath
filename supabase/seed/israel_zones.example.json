@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "A worked example of the israel_zones.json format.",
+    "",
+    "THE SECTION BELOW IS FICTIONAL. The coordinates trace an arbitrary stretch",
+    "and the id is marked as an example so that it cannot be mistaken for real",
+    "enforcement data if it is ever loaded by accident. Copy the shape, not the",
+    "numbers.",
+    "",
+    "Field reference is in docs/ISRAEL_ZONES.md."
+  ],
+  "zones": [
+    {
+      "id": "example-route6-north",
+      "name": "EXAMPLE - not a real section",
+      "road_ref": "6",
+      "speed_limit_kph": 110,
+      "minimum_speed_kph": 50,
+      "direction_degrees": 12,
+      "distance_meters": 8400,
+      "path": [
+        [32.28110, 34.94420],
+        [32.29050, 34.94690],
+        [32.30020, 34.94980],
+        [32.31000, 34.95280],
+        [32.31980, 34.95590],
+        [32.32960, 34.95900],
+        [32.33940, 34.96210],
+        [32.34920, 34.96520],
+        [32.35640, 34.96750]
+      ]
+    }
+  ]
+}

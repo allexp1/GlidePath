@@ -1,0 +1,57 @@
+# Supabase CLI configuration.
+#
+# Local stack:   supabase start   (needs Docker)
+# Reset schema:  supabase db reset
+# Push to cloud: supabase link --project-ref YOUR-REF && supabase db push
+
+project_id = "glidepath"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+# Generous because a fresh install downloads a whole country in pages.
+max_rows = 10000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "glidepath://auth"
+additional_redirect_urls = ["glidepath://auth"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+# Community reports need an identity to attribute to, but making drivers think
+# up a password for a camera-warning app is a good way to get no reports at all.
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+[functions.sync-cameras]
+# The cron job authenticates with the service role key, so the gateway must not
+# also demand a user JWT.
+verify_jwt = false
