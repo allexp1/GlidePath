@@ -121,11 +121,22 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type check
-        run: |
-          deno check supabase/functions/sync-cameras/index.ts
-          deno check supabase/seed/seed.ts
+      # Checked separately, from different directories, because Deno discovers
+      # deno.json from the working directory rather than from the file it is
+      # given. The seed CLI has its own config and must be checked from inside
+      # supabase/seed, or its mapped imports read as missing dependencies. The
+      # Edge Function has no config and uses explicit npm:/jsr: specifiers, so
+      # it checks fine from anywhere - which is the point, since Supabase's
+      # runtime resolves it the same way.
+      - name: Type check the Edge Function
+        run: deno check supabase/functions/sync-cameras/index.ts
 
+      - name: Type check the seed CLI
+        working-directory: supabase/seed
+        run: deno check seed.ts
+
+      # Lint is syntactic and resolves no imports, so one pass from the root
+      # covers both.
       - name: Lint
         run: deno lint supabase/functions supabase/seed
 
