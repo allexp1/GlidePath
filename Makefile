@@ -111,6 +111,18 @@ seed: ## Apply migrations and load Israel + Moldova camera data (the one setup c
 	supabase db push
 	$(MAKE) seed-israel
 	$(MAKE) seed-moldova
+	@echo ""
+	@echo "Done. One thing the migrations cannot do for you:"
+	@echo ""
+	@echo "  The nightly sync reads its credentials from Supabase Vault, and a"
+	@echo "  service role key must never be committed to a migration. Run this"
+	@echo "  once in the SQL editor:"
+	@echo ""
+	@echo "    select vault.create_secret('<your project url>', 'project_url');"
+	@echo "    select vault.create_secret('<your service role key>', 'service_role_key');"
+	@echo ""
+	@echo "  Until then the schedule fires and fails harmlessly. Seeding by hand"
+	@echo "  (this command) keeps working either way."
 
 .PHONY: seed-israel
 seed-israel: ## Pull Israel cameras from Overpass and merge the manual zone file

@@ -13,7 +13,10 @@ import GlidePathCore
 /// anything spatial. SQLite has no PostGIS, and a bounding-box query on indexed
 /// doubles followed by an exact distance filter in Swift is both simpler and
 /// fast enough: even Israel's full camera set is a few thousand rows.
-final class LocalDatabase: Sendable {
+/// `@unchecked` because the guarantee comes from GRDB rather than from the
+/// compiler: a `DatabasePool` is documented as safe to use concurrently from
+/// any thread, and this type adds no mutable state of its own on top of it.
+final class LocalDatabase: @unchecked Sendable {
     let pool: DatabasePool
 
     init(url: URL) throws {

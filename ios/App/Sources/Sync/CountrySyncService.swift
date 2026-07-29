@@ -64,7 +64,6 @@ final class CountrySyncService {
     /// there is no signal, so the screen is never empty in a dead spot.
     func refreshCatalogue() async {
         progress = .checking
-        defer { progress = .idle }
 
         do {
             let remote: [CountryDTO] = try await client.fetchAll(
@@ -73,7 +72,11 @@ final class CountrySyncService {
             )
             try await storeCatalogue(remote)
             lastCheckedAt = Date()
+            progress = .idle
         } catch {
+            // Deliberately not reset to .idle afterwards: the screen needs to
+            // keep showing why the list is stale. Whatever is already
+            // downloaded still works, which is the entire point of the design.
             progress = .failed(country: "", message: error.localizedDescription)
         }
 

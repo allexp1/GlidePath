@@ -5,8 +5,6 @@ struct RootView: View {
     @State private var showingSettings = false
 
     var body: some View {
-        @Bindable var model = model
-
         Group {
             switch model.startup {
             case .loading:

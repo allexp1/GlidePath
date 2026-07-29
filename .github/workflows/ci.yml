@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The engine. No simulator, no Xcode project, no network: this is the job
+  # that should stay green in seconds and is the one to look at first when
+  # something breaks.
+  core-engine:
+    name: Core engine tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+          swift --version
+
+      - name: Run tests
+        working-directory: ios/Packages/GlidePathCore
+        run: swift test --enable-code-coverage
+
+      - name: Check the GPX fixture is up to date
+        run: |
+          node scripts/generate-test-gpx.mjs
+          if ! git diff --quiet -- ios/Packages/GlidePathCore/Tests/GlidePathCoreTests/Fixtures; then
+            echo "::error::The GPX fixture is out of sync with scripts/generate-test-gpx.mjs."
+            git --no-pager diff --stat -- ios/Packages/GlidePathCore/Tests/GlidePathCoreTests/Fixtures
+            exit 1
+          fi
+
+  # The app. Needs the generated Xcode project, so it also proves the XcodeGen
+  # manifest still works from a clean checkout.
+  app:
+    name: App build and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Config.xcconfig is gitignored because it holds real keys. CI builds
+      # against the example, which is exactly what a developer sees before they
+      # have filled anything in - so this job also proves a fresh clone builds.
+      - name: Create a placeholder configuration
+        run: cp Config.example.xcconfig Config.xcconfig
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Pick an available simulator
+        id: simulator
+        run: |
+          device=$(xcrun simctl list devices available --json \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)['devices']
+          best = None
+          for runtime, devices in data.items():
+              if 'iOS' not in runtime:
+                  continue
+              for device in devices:
+                  if device.get('isAvailable') and 'iPhone' in device['name']:
+                      best = device['udid']
+          print(best or '')
+          ")
+          if [ -z "$device" ]; then
+            echo "::error::No iOS simulator available on this runner"
+            exit 1
+          fi
+          echo "udid=$device" >> "$GITHUB_OUTPUT"
+          echo "Using simulator $device"
+
+      - name: Build and test
+        run: |
+          xcodebuild test \
+            -project ios/GlidePath.xcodeproj \
+            -scheme GlidePath \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM=""
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install swiftlint
+      - run: swiftlint lint --strict --reporter github-actions-logging
+
+  # The Edge Function and the seed CLI share their code, so type-checking one
+  # type-checks both.
+  supabase-functions:
+    name: Edge function and seed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type check
+        run: |
+          deno check supabase/functions/sync-cameras/index.ts
+          deno check supabase/seed/seed.ts
+
+      - name: Lint
+        run: deno lint supabase/functions supabase/seed
+
+      - name: Validate the seed data files
+        run: |
+          for file in supabase/seed/*.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$file','utf8'))" \
+              || { echo "::error file=$file::invalid JSON"; exit 1; }
+            echo "ok $file"
+          done
+
+  # Applies every migration to a real Postgres with the real extensions. This
+  # is the only place the SQL is actually executed, so it is the job that
+  # catches a typo in a constraint or a function that does not compile.
+  database:
+    name: Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack and apply migrations
+        run: supabase db start
+
+      - name: Re-apply from scratch
+        run: supabase db reset
+
+      - name: Confirm the schema landed
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            select count(*) as camera_type_values from pg_enum
+             where enumtypid = 'public.camera_type'::regtype;
+          "
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            select code, dataset_version from public.countries order by code;
+          "
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            select table_name from information_schema.views
+             where table_schema = 'public' order by table_name;
+          "
+
+      - name: Every public table must have row level security on
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -t -c "
+            select string_agg(tablename, ', ')
+              from pg_tables
+             where schemaname = 'public'
+               and not rowsecurity;
+          " > /tmp/unprotected.txt
+          if [ -s /tmp/unprotected.txt ] && grep -q '[^[:space:]]' /tmp/unprotected.txt; then
+            echo "::error::Tables without row level security: $(cat /tmp/unprotected.txt)"
+            exit 1
+          fi
+          echo "All public tables have row level security enabled."

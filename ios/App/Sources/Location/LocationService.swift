@@ -23,12 +23,17 @@ final class LocationService: NSObject {
     private(set) var latestFix: LocationFix?
     private(set) var isTrackingPrecisely = false
 
-    /// Called for every usable fix, on the main actor.
-    var onFix: ((LocationFix) -> Void)?
+    // These are annotated @MainActor rather than left bare. The closures are
+    // only ever invoked from main-actor code, and saying so in the type is what
+    // lets a subscriber call its own main-actor methods from inside them
+    // without a concurrency violation.
+
+    /// Called for every usable fix.
+    var onFix: (@MainActor (LocationFix) -> Void)?
 
     /// Called with a monitored region's identifier when it is entered.
-    var onRegionEntered: ((String) -> Void)?
-    var onRegionExited: ((String) -> Void)?
+    var onRegionEntered: (@MainActor (String) -> Void)?
+    var onRegionExited: (@MainActor (String) -> Void)?
 
     private let manager: CLLocationManager
     private var permissionContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
@@ -73,12 +78,12 @@ final class LocationService: NSObject {
     /// reduced accuracy. Reduced accuracy is fatally imprecise here: it can be
     /// kilometres out, which makes both the entry timestamp and the distance
     /// along the road meaningless.
-    func requestTemporaryPreciseAccuracy() async {
+    func requestTemporaryPreciseAccuracy() {
         guard accuracyAuthorization == .reducedAccuracy else { return }
-        try? await manager.requestTemporaryFullAccuracyAuthorization(
-            withPurposeKey: "ZonePrecision"
-        )
-        accuracyAuthorization = manager.accuracyAuthorization
+        // The purpose key matches NSLocationTemporaryUsageDescriptionDictionary
+        // in Info.plist. The result arrives through
+        // locationManagerDidChangeAuthorization rather than a return value.
+        manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "ZonePrecision")
     }
 
     // MARK: - Tracking modes
