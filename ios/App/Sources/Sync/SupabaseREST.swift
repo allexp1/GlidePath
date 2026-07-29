@@ -47,15 +47,21 @@ struct SupabaseREST: Sendable {
 
     /// Fetches every row of a view, paging until a short page comes back.
     ///
-    /// Ordering by `updated_at` then `id` matters more than it looks: paging by
-    /// offset over an unstable order silently skips and duplicates rows, and
-    /// `updated_at` alone is not unique when a sync writes a thousand rows in
-    /// one transaction.
+    /// Ordering by `updated_at` then a unique column matters more than it looks:
+    /// paging by offset over an unstable order silently skips and duplicates
+    /// rows, and `updated_at` alone is not unique when a sync writes a thousand
+    /// rows in one transaction.
+    ///
+    /// - Parameter uniqueColumn: the column that makes the sort total. Every
+    ///   view has one but they are not all called `id` - `countries_public` is
+    ///   keyed on `code` - and naming a column the view does not have earns a
+    ///   PostgREST 400 rather than a silently different order.
     func fetchAll<T: Decodable & Sendable>(
         _ type: T.Type,
         from view: String,
         filters: [String: String] = [:],
-        since: Date? = nil
+        since: Date? = nil,
+        uniqueColumn: String = "id"
     ) async throws -> [T] {
         var results: [T] = []
         var offset = 0
@@ -63,7 +69,7 @@ struct SupabaseREST: Sendable {
         while true {
             var query = filters
             query["select"] = "*"
-            query["order"] = "updated_at.asc,id.asc"
+            query["order"] = "updated_at.asc,\(uniqueColumn).asc"
             query["limit"] = String(Self.pageSize)
             query["offset"] = String(offset)
 

@@ -235,6 +235,45 @@ jobs:
              where table_schema = 'public' order by table_name;
           "
 
+      # Applying the schema proves the SQL is valid. It does not prove the app's
+      # queries work against it. The client pages with
+      # `order=updated_at.asc,<unique>.asc`, and naming a column a view does not
+      # have is a PostgREST 400 that only shows up at runtime - which is exactly
+      # how `countries_public.id does not exist` reached a phone.
+      - name: The app's own queries must work against the views
+        run: |
+          ANON=$(supabase status -o json 2>/dev/null \
+            | python3 -c "import json,sys; print(json.load(sys.stdin).get('ANON_KEY',''))" 2>/dev/null || true)
+          if [ -z "$ANON" ]; then
+            # The CLI's local demo key, stable across versions.
+            ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8iLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTk1NzM0NTIwMH0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
+          fi
+
+          base="http://127.0.0.1:54321/rest/v1"
+          failed=0
+
+          check() {
+            view=$1
+            unique=$2
+            status=$(curl -s -o /tmp/rest.json -w '%{http_code}' \
+              -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
+              "$base/$view?select=*&order=updated_at.asc,$unique.asc&limit=1000&offset=0")
+            if [ "$status" != "200" ]; then
+              echo "::error::$view ordered by $unique returned HTTP $status: $(cat /tmp/rest.json)"
+              failed=1
+            else
+              echo "ok   $view (order by updated_at, $unique)"
+            fi
+          }
+
+          # These pairs must match the fetchAll calls in CountrySyncService.
+          check countries_public code
+          check cameras_public id
+          check zones_public id
+          check rest_stops_public id
+
+          exit $failed
+
       - name: Every public table must have row level security on
         run: |
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -t -c "

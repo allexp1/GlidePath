@@ -68,7 +68,9 @@ final class CountrySyncService {
         do {
             let remote: [CountryDTO] = try await client.fetchAll(
                 CountryDTO.self,
-                from: "countries_public"
+                from: "countries_public",
+                // Keyed on code, not id.
+                uniqueColumn: "code"
             )
             try await storeCatalogue(remote)
             lastCheckedAt = Date()
