@@ -1,0 +1,42 @@
+// GlidePath build configuration.
+//
+// SETUP: copy this file to Config.xcconfig and fill in the four values below.
+//
+//     cp Config.example.xcconfig Config.xcconfig
+//
+// Config.xcconfig is gitignored. This example file is the only one committed.
+// ios/project.yml wires Config.xcconfig into every build configuration, and the
+// values land in Info.plist, where Sources/Configuration/AppConfig.swift reads
+// them at runtime.
+
+// ---------------------------------------------------------------------------
+// Supabase - from your project dashboard, Settings > API
+// ---------------------------------------------------------------------------
+
+// Your project REST URL, e.g. https:/$()/abcdefghijklm.supabase.co
+// NOTE the $() in the scheme. xcconfig treats "//" as a comment even mid-line,
+// so the empty variable substitution $() is the standard way to keep the two
+// slashes. Copy the pattern exactly and only replace the host.
+SUPABASE_URL = https:/$()/YOUR-PROJECT-REF.supabase.co
+
+// The anon / publishable key. Safe to ship in a client binary: every table is
+// protected by row level security (see supabase/migrations). It grants public
+// read on camera data and insert-only on pending_reports.
+SUPABASE_ANON_KEY = YOUR-ANON-KEY
+
+// ---------------------------------------------------------------------------
+// Apple - from developer.apple.com, Membership details
+// ---------------------------------------------------------------------------
+
+// Your 10-character Team ID, e.g. A1B2C3D4E5
+DEVELOPMENT_TEAM = YOUR-TEAM-ID
+
+// Reverse-DNS bundle identifier. Must be unique across the App Store, so
+// change this to something you own before you try to run on a device.
+PRODUCT_BUNDLE_IDENTIFIER = ai.glidepath.app
+
+// ---------------------------------------------------------------------------
+// Signing - leave as-is for normal development
+// ---------------------------------------------------------------------------
+
+CODE_SIGN_STYLE = Automatic

@@ -1,0 +1,148 @@
+# XcodeGen manifest. The .xcodeproj is generated, never committed.
+#
+#     cd ios && xcodegen generate      (or: make project from the repo root)
+
+name: GlidePath
+
+options:
+  bundleIdPrefix: ai.glidepath
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CLANG_ENABLE_MODULES: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+
+# Config.xcconfig holds the Supabase keys and the Apple Team ID. It is
+# gitignored. `make project` copies Config.example.xcconfig into place if it is
+# missing, so generation never fails on a fresh clone.
+configFiles:
+  Debug: ../Config.xcconfig
+  Release: ../Config.xcconfig
+
+packages:
+  GlidePathCore:
+    path: Packages/GlidePathCore
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.0.0"
+
+targets:
+  GlidePath:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+        buildPhase: resources
+
+    dependencies:
+      - package: GlidePathCore
+        product: GlidePathCore
+      - package: GRDB
+        product: GRDB
+
+    settings:
+      base:
+        PRODUCT_NAME: GlidePath
+        PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER)
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_STYLE: $(CODE_SIGN_STYLE)
+        INFOPLIST_FILE: App/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_PREVIEWS: YES
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: GlidePath
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+
+        # Values injected from Config.xcconfig and read back at runtime by
+        # AppConfig.swift. Keeping them in Info.plist is what lets a single
+        # xcconfig file be the only thing a new developer edits.
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+
+        # "Always" is required so a zone geofence can wake the app when the
+        # phone is locked and GlidePath is not on screen. OnboardingView
+        # explains this before the system prompt is ever shown.
+        NSLocationWhenInUseUsageDescription:
+          GlidePath uses your location to warn you about speed cameras on the road ahead.
+        NSLocationAlwaysAndWhenInUseUsageDescription:
+          GlidePath needs background location so it can warn you about a speed camera
+          even when your phone is locked and another navigation app is on screen.
+          Your location never leaves your phone.
+        NSLocationTemporaryUsageDescriptionDictionary:
+          ZonePrecision:
+            GlidePath switches to precise location only while you are inside an
+            average-speed camera zone, so it can tell you the exact speed to hold.
+
+        UIBackgroundModes:
+          - location
+          - audio
+
+        # Region monitoring and precise GPS are the whole product. Without them
+        # the app cannot function, so the App Store should not offer it to
+        # devices that lack them.
+        UIRequiredDeviceCapabilities:
+          - armv7
+          - location-services
+          - gps
+
+        ITSAppUsesNonExemptEncryption: false
+
+  GlidePathTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App/Tests
+    dependencies:
+      - target: GlidePath
+      - package: GlidePathCore
+        product: GlidePathCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  GlidePath:
+    build:
+      targets:
+        GlidePath: all
+        GlidePathTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - GlidePathTests
+    archive:
+      config: Release
