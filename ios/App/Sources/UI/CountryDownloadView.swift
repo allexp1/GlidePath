@@ -180,8 +180,11 @@ struct CountryDownloadView: View {
         }
         parts.append(size(country.estimatedBytes))
 
-        if country.hasUpdate { parts.append("update available") }
-        else if country.isInstalled { parts.append("installed") }
+        if country.hasUpdate {
+            parts.append("update available")
+        } else if country.isInstalled {
+            parts.append("installed")
+        }
 
         return parts.joined(separator: " · ")
     }
