@@ -17,7 +17,15 @@ public struct CrossingDetector: Sendable, Equatable {
     /// Signed distance to the line, negative on the approach side.
     public typealias SignedDistance = Double
 
-    private var previous: (distance: SignedDistance, timestamp: Date)?
+    /// A named struct rather than a tuple. Tuples cannot conform to protocols
+    /// in Swift, so a tuple here would block the synthesised Equatable
+    /// conformance that ZoneSession's own Equatable depends on.
+    private struct Observation: Sendable, Equatable {
+        let distance: SignedDistance
+        let timestamp: Date
+    }
+
+    private var previous: Observation?
     public private(set) var crossedAt: Date?
 
     public init() {}
@@ -28,7 +36,7 @@ public struct CrossingDetector: Sendable, Equatable {
     /// update where the sign flips, and nil otherwise.
     @discardableResult
     public mutating func update(signedDistance: SignedDistance, at timestamp: Date) -> Date? {
-        defer { previous = (signedDistance, timestamp) }
+        defer { previous = Observation(distance: signedDistance, timestamp: timestamp) }
 
         guard crossedAt == nil else { return nil }
 

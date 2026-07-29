@@ -249,6 +249,7 @@ extension LocationService: CLLocationManagerDelegate {
         monitoringDidFailFor region: CLRegion?,
         withError error: Error
     ) {
-        print("[GlidePath] region monitoring failed for \(region?.identifier ?? "unknown"): \(error.localizedDescription)")
+        let identifier = region?.identifier ?? "unknown"
+        print("[GlidePath] region monitoring failed for \(identifier): \(error.localizedDescription)")
     }
 }

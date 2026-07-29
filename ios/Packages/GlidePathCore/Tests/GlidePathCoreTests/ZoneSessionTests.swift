@@ -68,8 +68,10 @@ final class ZoneSessionTests: XCTestCase {
             .drive(speedKph: 60, distanceMeters: 6_000)
         ])
 
-        guard let firstTight = probe.advice.first(where: { $0.tier == .tight && $0.allowance.distanceCoveredMeters > 3_900 }),
-              let target = firstTight.targetSpeedKph else {
+        let pastTheSprint = probe.advice.first {
+            $0.tier == .tight && $0.allowance.distanceCoveredMeters > 3_900
+        }
+        guard let firstTight = pastTheSprint, let target = firstTight.targetSpeedKph else {
             return XCTFail("expected tight coaching after a 4 km sprint at 140")
         }
 

@@ -30,7 +30,8 @@ struct SupabaseREST: Sendable {
         var errorDescription: String? {
             switch self {
             case let .http(status, body) where status == 401 || status == 403:
-                return "Supabase rejected the anon key (HTTP \(status)). Check SUPABASE_ANON_KEY in Config.xcconfig. \(body)"
+                return "Supabase rejected the anon key (HTTP \(status)). "
+                    + "Check SUPABASE_ANON_KEY in Config.xcconfig. \(body)"
             case let .http(status, body):
                 return "Supabase returned HTTP \(status). \(body)"
             case let .transport(message):
@@ -125,6 +126,9 @@ struct SupabaseREST: Sendable {
     /// fall back rather than failing a whole download over a timestamp.
     static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
+        // Postgres columns are snake_case and Swift properties are not.
+        // Converting here beats a CodingKeys block on every wire type.
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .custom { decoder in
             let raw = try decoder.singleValueContainer().decode(String.self)
             if let date = timestampFormatter.date(from: raw) { return date }
@@ -160,54 +164,54 @@ struct SupabaseREST: Sendable {
 struct CountryDTO: Decodable, Sendable {
     let code: String
     let name: String
-    let dataset_version: Int
-    let min_compatible_version: Int
-    let camera_count: Int
-    let zone_count: Int
-    let last_synced_at: Date?
+    let datasetVersion: Int
+    let minCompatibleVersion: Int
+    let cameraCount: Int
+    let zoneCount: Int
+    let lastSyncedAt: Date?
 }
 
 struct CameraDTO: Decodable, Sendable {
     let id: String
-    let country_code: String
+    let countryCode: String
     let latitude: Double
     let longitude: Double
     let type: String
-    let direction_degrees: Double?
-    let speed_limit_kph: Double?
-    let zone_id: String?
+    let directionDegrees: Double?
+    let speedLimitKph: Double?
+    let zoneId: String?
     let verified: Bool
-    let updated_at: Date
+    let updatedAt: Date
 }
 
 struct RestStopDTO: Decodable, Sendable {
     let id: String
-    let country_code: String
-    let zone_id: String?
+    let countryCode: String
+    let zoneId: String?
     let name: String?
     let latitude: Double
     let longitude: Double
     let kind: String
-    let distance_along_meters: Double?
-    let updated_at: Date
+    let distanceAlongMeters: Double?
+    let updatedAt: Date
 }
 
 struct ZoneDTO: Decodable, Sendable {
     let id: String
-    let country_code: String
+    let countryCode: String
     let name: String?
-    let road_ref: String?
-    let entry_latitude: Double
-    let entry_longitude: Double
-    let exit_latitude: Double
-    let exit_longitude: Double
-    let distance_meters: Double
-    let speed_limit_kph: Double
-    let minimum_speed_kph: Double?
-    let direction_degrees: Double?
+    let roadRef: String?
+    let entryLatitude: Double
+    let entryLongitude: Double
+    let exitLatitude: Double
+    let exitLongitude: Double
+    let distanceMeters: Double
+    let speedLimitKph: Double
+    let minimumSpeedKph: Double?
+    let directionDegrees: Double?
     let verified: Bool
-    let path_segments: [GeoJSONLineString]?
-    let updated_at: Date
+    let pathSegments: [GeoJSONLineString]?
+    let updatedAt: Date
 
     /// Flattens the per-segment GeoJSON into the `[[lat, lon]]` array the local
     /// database stores.
@@ -216,7 +220,7 @@ struct ZoneDTO: Decodable, Sendable {
     /// is the other way round, which is the first thing to check if a zone ever
     /// behaves as though it is in the wrong hemisphere.
     var pathJSON: String? {
-        guard let segments = path_segments, !segments.isEmpty else { return nil }
+        guard let segments = pathSegments, !segments.isEmpty else { return nil }
 
         var coordinates: [[Double]] = []
         for segment in segments {

@@ -101,10 +101,10 @@ final class CountrySyncService {
                     arguments: [
                         country.code,
                         country.name,
-                        country.dataset_version,
-                        country.min_compatible_version,
-                        country.camera_count,
-                        country.zone_count
+                        country.datasetVersion,
+                        country.minCompatibleVersion,
+                        country.cameraCount,
+                        country.zoneCount
                     ]
                 )
             }
@@ -274,17 +274,17 @@ final class CountrySyncService {
                             updated_at = excluded.updated_at
                         """,
                     arguments: [
-                        zone.id, zone.country_code, zone.name, zone.road_ref,
-                        zone.entry_latitude, zone.entry_longitude,
-                        zone.exit_latitude, zone.exit_longitude,
-                        zone.distance_meters, zone.speed_limit_kph,
-                        zone.minimum_speed_kph, zone.direction_degrees,
-                        zone.verified, zone.pathJSON, zone.updated_at
+                        zone.id, zone.countryCode, zone.name, zone.roadRef,
+                        zone.entryLatitude, zone.entryLongitude,
+                        zone.exitLatitude, zone.exitLongitude,
+                        zone.distanceMeters, zone.speedLimitKph,
+                        zone.minimumSpeedKph, zone.directionDegrees,
+                        zone.verified, zone.pathJSON, zone.updatedAt
                     ]
                 )
             }
 
-            if let latest = zones.map(\.updated_at).max() {
+            if let latest = zones.map(\.updatedAt).max() {
                 try Self.advanceCursor(db, country: country, resource: .zones, to: latest)
             } else {
                 try Self.ensureCursor(db, country: country, resource: .zones)
@@ -312,14 +312,14 @@ final class CountrySyncService {
                             updated_at = excluded.updated_at
                         """,
                     arguments: [
-                        camera.id, camera.country_code, camera.latitude, camera.longitude,
-                        camera.type, camera.direction_degrees, camera.speed_limit_kph,
-                        camera.zone_id, camera.verified, camera.updated_at
+                        camera.id, camera.countryCode, camera.latitude, camera.longitude,
+                        camera.type, camera.directionDegrees, camera.speedLimitKph,
+                        camera.zoneId, camera.verified, camera.updatedAt
                     ]
                 )
             }
 
-            if let latest = cameras.map(\.updated_at).max() {
+            if let latest = cameras.map(\.updatedAt).max() {
                 try Self.advanceCursor(db, country: country, resource: .cameras, to: latest)
             } else {
                 try Self.ensureCursor(db, country: country, resource: .cameras)
@@ -346,14 +346,14 @@ final class CountrySyncService {
                             updated_at = excluded.updated_at
                         """,
                     arguments: [
-                        stop.id, stop.country_code, stop.zone_id, stop.name,
+                        stop.id, stop.countryCode, stop.zoneId, stop.name,
                         stop.latitude, stop.longitude, stop.kind,
-                        stop.distance_along_meters, stop.updated_at
+                        stop.distanceAlongMeters, stop.updatedAt
                     ]
                 )
             }
 
-            if let latest = restStops.map(\.updated_at).max() {
+            if let latest = restStops.map(\.updatedAt).max() {
                 try Self.advanceCursor(db, country: country, resource: .restStops, to: latest)
             } else {
                 try Self.ensureCursor(db, country: country, resource: .restStops)

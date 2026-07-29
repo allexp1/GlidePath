@@ -78,9 +78,7 @@ public struct DriveSimulator: Sendable {
     ) -> [LocationFix] {
         guard !steps.isEmpty else { return [] }
 
-        var samples: [(distance: Double, time: Date)] = []
-        var distance = -options.leadInMeters
-        var time = start
+        var cursor = Cursor(distance: -options.leadInMeters, time: start)
 
         let firstSpeed = steps.compactMap { step -> Double? in
             if case let .drive(speedKph, _) = step { return speedKph }
@@ -93,8 +91,7 @@ public struct DriveSimulator: Sendable {
         }.last ?? firstSpeed
 
         // Lead-in.
-        appendDrive(
-            &samples, &distance, &time,
+        cursor.drive(
             speedKph: firstSpeed,
             distanceMeters: options.leadInMeters,
             interval: options.sampleInterval
@@ -103,30 +100,24 @@ public struct DriveSimulator: Sendable {
         for step in steps {
             switch step {
             case let .drive(speedKph, distanceMeters):
-                appendDrive(
-                    &samples, &distance, &time,
+                cursor.drive(
                     speedKph: speedKph,
                     distanceMeters: distanceMeters,
                     interval: options.sampleInterval
                 )
             case let .stop(seconds):
-                var remaining = seconds
-                while remaining > 0 {
-                    samples.append((distance, time))
-                    let tick = min(options.sampleInterval, remaining)
-                    time = time.addingTimeInterval(tick)
-                    remaining -= tick
-                }
+                cursor.wait(seconds: seconds, interval: options.sampleInterval)
             }
         }
 
         // Run-out past the exit line.
-        appendDrive(
-            &samples, &distance, &time,
+        cursor.drive(
             speedKph: lastSpeed,
             distanceMeters: options.runOutMeters,
             interval: options.sampleInterval
         )
+
+        let samples = cursor.samples
 
         var random = Random(seed: options.jitterSeed)
         var fixes: [LocationFix] = []
@@ -159,25 +150,42 @@ public struct DriveSimulator: Sendable {
         return fixes
     }
 
-    private static func appendDrive(
-        _ samples: inout [(distance: Double, time: Date)],
-        _ distance: inout Double,
-        _ time: inout Date,
-        speedKph: Double,
-        distanceMeters: Double,
-        interval: TimeInterval
-    ) {
-        guard distanceMeters > 0, speedKph > 0 else { return }
-        let speedMps = Units.mps(fromKph: speedKph)
-        let stepDistance = speedMps * interval
-        var covered = 0.0
+    private struct Sample {
+        let distance: Double
+        let time: Date
+    }
 
-        while covered < distanceMeters {
-            samples.append((distance, time))
-            let advance = min(stepDistance, distanceMeters - covered)
-            distance += advance
-            covered += advance
-            time = time.addingTimeInterval(advance / speedMps)
+    /// A driver's position and clock as the script plays out. Holding the three
+    /// together beats threading them through as inout parameters, and it keeps
+    /// "the clock runs while stopped, the odometer does not" in one place.
+    private struct Cursor {
+        var samples: [Sample] = []
+        var distance: Double
+        var time: Date
+
+        mutating func drive(speedKph: Double, distanceMeters: Double, interval: TimeInterval) {
+            guard distanceMeters > 0, speedKph > 0 else { return }
+            let speedMps = Units.mps(fromKph: speedKph)
+            let stepDistance = speedMps * interval
+            var covered = 0.0
+
+            while covered < distanceMeters {
+                samples.append(Sample(distance: distance, time: time))
+                let advance = min(stepDistance, distanceMeters - covered)
+                distance += advance
+                covered += advance
+                time = time.addingTimeInterval(advance / speedMps)
+            }
+        }
+
+        mutating func wait(seconds: TimeInterval, interval: TimeInterval) {
+            var remaining = seconds
+            while remaining > 0 {
+                samples.append(Sample(distance: distance, time: time))
+                let tick = min(interval, remaining)
+                time = time.addingTimeInterval(tick)
+                remaining -= tick
+            }
         }
     }
 
