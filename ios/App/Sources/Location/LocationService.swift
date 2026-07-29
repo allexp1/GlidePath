@@ -181,9 +181,16 @@ final class LocationService: NSObject {
 // this manager is created on the main actor, so the assumption holds.
 extension LocationService: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // Read the values out here rather than reaching through `manager`
+        // inside the closure. CLLocationManager is not Sendable, so capturing
+        // it would mean sending a non-Sendable reference across an isolation
+        // boundary; the two enums it yields are values and cross freely.
+        let status = manager.authorizationStatus
+        let accuracy = manager.accuracyAuthorization
+
         MainActor.assumeIsolated {
-            authorizationStatus = manager.authorizationStatus
-            accuracyAuthorization = manager.accuracyAuthorization
+            authorizationStatus = status
+            accuracyAuthorization = accuracy
 
             if let continuation = permissionContinuation, authorizationStatus != .notDetermined {
                 permissionContinuation = nil
@@ -215,14 +222,17 @@ extension LocationService: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        // CLRegion is not Sendable either, and only its identifier is needed.
+        let identifier = region.identifier
         MainActor.assumeIsolated {
-            onRegionEntered?(region.identifier)
+            onRegionEntered?(identifier)
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        let identifier = region.identifier
         MainActor.assumeIsolated {
-            onRegionExited?(region.identifier)
+            onRegionExited?(identifier)
         }
     }
 
@@ -231,9 +241,10 @@ extension LocationService: CLLocationManagerDelegate {
         didDetermineState state: CLRegionState,
         for region: CLRegion
     ) {
+        let identifier = region.identifier
         MainActor.assumeIsolated {
             if state == .inside {
-                onRegionEntered?(region.identifier)
+                onRegionEntered?(identifier)
             }
         }
     }

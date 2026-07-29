@@ -381,7 +381,7 @@ final class CountrySyncService {
     // plain synchronous context off the main actor. Without it the whole type's
     // @MainActor isolation follows the static methods in and the call is a
     // concurrency error.
-    private nonisolated static func advanceCursor(
+    nonisolated private static func advanceCursor(
         _ db: Database,
         country: String,
         resource: Resource,
@@ -400,7 +400,7 @@ final class CountrySyncService {
 
     /// An empty result still needs a cursor row, or the next sync sees an
     /// incomplete cursor set and falls back to a full download for nothing.
-    private nonisolated static func ensureCursor(
+    nonisolated private static func ensureCursor(
         _ db: Database,
         country: String,
         resource: Resource
