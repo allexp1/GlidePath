@@ -165,6 +165,35 @@ jobs:
           fi
           echo "Seed CLI loads and fails for the right reason."
 
+      # A copied .env.example is a syntactically valid config pointing at a host
+      # that does not exist. Presence checks pass, Overpass runs for two minutes,
+      # and it dies on DNS. The seed has to reject the placeholder up front.
+      - name: The seed CLI must reject placeholder credentials
+        working-directory: supabase/seed
+        env:
+          SUPABASE_URL: https://your-project-ref.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: YOUR-SERVICE-ROLE-KEY
+        run: |
+          set +e
+          output=$(deno run --allow-net --allow-env --allow-read seed.ts moldova 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+
+          if [ "$status" -ne 1 ]; then
+            echo "::error::expected exit 1 on placeholder credentials, got $status"
+            exit 1
+          fi
+          if ! echo "$output" | grep -q "placeholder"; then
+            echo "::error::expected the placeholder to be named as the problem"
+            exit 1
+          fi
+          if echo "$output" | grep -qi "querying Overpass"; then
+            echo "::error::it started querying Overpass before validating credentials"
+            exit 1
+          fi
+          echo "Seed CLI refuses placeholder credentials before doing any work."
+
       - name: Validate the seed data files
         run: |
           for file in supabase/seed/*.json; do

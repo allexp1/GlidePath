@@ -65,16 +65,9 @@ async function main(): Promise<number> {
   // The Makefile runs this from supabase/seed, so ../.env is supabase/.env.
   await load({ envPath: '../.env', export: true })
 
-  const url = Deno.env.get('SUPABASE_URL')
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-
-  if (!url || !key) {
-    console.error(
-      'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.\n' +
-        'Copy supabase/.env.example to supabase/.env and fill them in.'
-    )
-    return 1
-  }
+  const credentials = readCredentials()
+  if (!credentials) return 1
+  const { url, key } = credentials
 
   let manualZones: ManualZone[] = []
   if (target.manualZonesFile) {
@@ -118,6 +111,67 @@ async function main(): Promise<number> {
   }
 
   return 0
+}
+
+/**
+ * Reads and sanity-checks the credentials from supabase/.env.
+ *
+ * Checking for placeholders matters as much as checking for absence. Copying
+ * .env.example leaves SUPABASE_URL set to a syntactically valid URL pointing at
+ * a host that does not exist, so a presence-only check passes, two minutes of
+ * Overpass queries run, and the whole thing dies on a DNS error with a stack
+ * trace pointing at the upsert.
+ *
+ * It is a particularly confusing failure because `supabase db push` in the same
+ * command succeeds: the CLI uses the linked project from `supabase link` and
+ * never reads this file. The migrations land correctly while the seed talks to
+ * nowhere.
+ */
+function readCredentials(): { url: string; key: string } | null {
+  const url = Deno.env.get('SUPABASE_URL')?.trim()
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim()
+
+  const complain = (problem: string) => {
+    console.error(`${problem}\n`)
+    console.error('Fill in supabase/.env with the real values from your Supabase dashboard,')
+    console.error('under Settings > API:')
+    console.error('')
+    console.error('  SUPABASE_URL=https://<your-project-ref>.supabase.co')
+    console.error('  SUPABASE_SERVICE_ROLE_KEY=<the service_role key>')
+    return null
+  }
+
+  if (!url || !key) {
+    return complain('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are both required.')
+  }
+
+  const looksLikePlaceholder = (value: string) =>
+    /your-project-ref|your-service-role|^YOUR-/i.test(value)
+
+  if (looksLikePlaceholder(url)) {
+    return complain(`SUPABASE_URL is still the example placeholder: ${url}`)
+  }
+  if (looksLikePlaceholder(key)) {
+    return complain('SUPABASE_SERVICE_ROLE_KEY is still the example placeholder.')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return complain(`SUPABASE_URL is not a valid URL: ${url}`)
+  }
+  if (parsed.protocol !== 'https:') {
+    return complain(`SUPABASE_URL must be https, got ${parsed.protocol}`)
+  }
+
+  // The service role key is a JWT. The anon key is too, so this does not prove
+  // you used the right one, but it does catch pasting something else entirely.
+  if (key.split('.').length !== 3) {
+    return complain('SUPABASE_SERVICE_ROLE_KEY does not look like a key (expected three dot-separated parts).')
+  }
+
+  return { url, key }
 }
 
 async function readManualZones(path: string): Promise<ManualZone[]> {
