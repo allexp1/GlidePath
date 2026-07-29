@@ -1,0 +1,26 @@
+{
+  "//": [
+    "Configuration for the seed CLI.",
+    "",
+    "nodeModulesDir 'auto' is the load-bearing line. supabase-js is an npm",
+    "package, and Deno only resolves npm: specifiers through the global cache",
+    "when nothing upstream puts it into node-resolution mode. A package.json",
+    "anywhere above the checkout is enough to flip that, and then `deno run`",
+    "fails with 'could not find a matching package in the node_modules",
+    "directory' even though `deno check` was perfectly happy.",
+    "",
+    "Setting it here makes the behaviour the same on every machine: Deno",
+    "creates a local node_modules under supabase/seed and installs into it.",
+    "That directory is gitignored.",
+    "",
+    "The Edge Function deliberately has no config of its own. It runs on",
+    "Supabase's edge runtime, which resolves npm: specifiers natively, and",
+    "adding a deno.json under supabase/functions would change how the CLI",
+    "deploys it."
+  ],
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225"
+  }
+}

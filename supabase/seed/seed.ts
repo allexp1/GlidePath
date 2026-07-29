@@ -17,8 +17,11 @@
  * is what the schedule will do.
  */
 
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { load } from 'jsr:@std/dotenv@0.225'
+// Bare specifiers, mapped in deno.json. The Edge Function keeps its explicit
+// npm:/jsr: prefixes because Supabase's runtime resolves those directly and
+// never sees this config.
+import { createClient } from '@supabase/supabase-js'
+import { load } from '@std/dotenv'
 import { syncCountry } from '../functions/_shared/sync.ts'
 import type { DatabaseClient, ManualZone } from '../functions/_shared/sync.ts'
 

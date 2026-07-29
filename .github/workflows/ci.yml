@@ -129,6 +129,31 @@ jobs:
       - name: Lint
         run: deno lint supabase/functions supabase/seed
 
+      # Type checking is not loading. `deno check` resolves npm specifiers
+      # through the global cache and passes, while `deno run` can still fail on
+      # a real machine because something upstream put Deno into node-resolution
+      # mode. This runs the CLI for real, with no credentials, and expects it to
+      # bail out cleanly on the missing keys - which it can only do if every
+      # module in the graph actually loaded first.
+      - name: The seed CLI must actually run
+        working-directory: supabase/seed
+        run: |
+          set +e
+          output=$(deno run --allow-net --allow-env --allow-read seed.ts moldova 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+
+          if [ "$status" -ne 1 ]; then
+            echo "::error::expected exit 1 with no credentials, got $status"
+            exit 1
+          fi
+          if ! echo "$output" | grep -q "SUPABASE_URL"; then
+            echo "::error::expected a complaint about missing credentials, got something else"
+            exit 1
+          fi
+          echo "Seed CLI loads and fails for the right reason."
+
       - name: Validate the seed data files
         run: |
           for file in supabase/seed/*.json; do
