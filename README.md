@@ -27,15 +27,21 @@ cp Config.example.xcconfig Config.xcconfig   # paste SUPABASE_URL, SUPABASE_ANON
 cp supabase/.env.example supabase/.env       # paste SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 make bootstrap                               # xcodegen, swiftlint, supabase cli, deno
-make link PROJECT_REF=your-project-ref       # once, so migrations know where to go
+make link                                    # once, so migrations know where to go
 make seed                                    # apply migrations, pull camera data
 make project                                 # generate the Xcode project
 
 open ios/GlidePath.xcodeproj
 ```
 
-`PROJECT_REF` is the last path component of your Supabase dashboard URL:
-`https://supabase.com/dashboard/project/`**`this-bit`**.
+`make link` asks for your project ref, which is the last path component of your
+Supabase dashboard URL: `https://supabase.com/dashboard/project/`**`this-bit`**.
+Pass it directly with `make link PROJECT_REF=abcdefghijklmnop` if you prefer.
+
+You need a Supabase project before any of this: create one at
+[supabase.com/dashboard](https://supabase.com/dashboard), then take the project
+URL and `anon` key from Settings > API for `Config.xcconfig`, and the
+`service_role` key from the same page for `supabase/.env`.
 
 Both config files are gitignored; only the `.example` versions are committed.
 `make help` lists everything else.

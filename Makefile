@@ -50,15 +50,25 @@ bootstrap: ## Install the toolchain (XcodeGen, SwiftLint, Supabase CLI, Deno) vi
 	@echo "  make seed"
 
 .PHONY: link
-link: ## Link this checkout to your Supabase project (once)
-	@if [ -z "$(PROJECT_REF)" ]; then \
-		echo "Usage: make link PROJECT_REF=<your-project-ref>"; \
+link: ## Link this checkout to your Supabase project (asks if PROJECT_REF is unset)
+	@# Prompts rather than printing a usage line with a <placeholder> in it.
+	@# Angle brackets are shell redirection, so a copied placeholder is a parse
+	@# error before make ever runs. The tr strips them anyway, in case someone
+	@# quotes one.
+	@ref=$$(printf '%s' "$(PROJECT_REF)" | tr -d '<>'); \
+	if [ -z "$$ref" ]; then \
+		echo "Your project ref is the last part of the Supabase dashboard URL:"; \
+		echo "  https://supabase.com/dashboard/project/THIS-BIT"; \
+		echo "It is also on Settings > General, as \"Reference ID\"."; \
 		echo ""; \
-		echo "The ref is the last path component of your dashboard URL:"; \
-		echo "  https://supabase.com/dashboard/project/<this-bit>"; \
+		printf "Project ref: "; \
+		read ref; \
+	fi; \
+	if [ -z "$$ref" ]; then \
+		echo "No project ref given, nothing linked."; \
 		exit 1; \
-	fi
-	supabase link --project-ref $(PROJECT_REF)
+	fi; \
+	supabase link --project-ref "$$ref"
 
 Config.xcconfig:
 	@echo "Config.xcconfig is missing. Creating it from the example."
