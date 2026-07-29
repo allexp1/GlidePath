@@ -26,12 +26,16 @@ cd glidepath
 cp Config.example.xcconfig Config.xcconfig   # paste SUPABASE_URL, SUPABASE_ANON_KEY, DEVELOPMENT_TEAM
 cp supabase/.env.example supabase/.env       # paste SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
-make bootstrap   # xcodegen, swiftlint, supabase cli via Homebrew
-make seed        # apply migrations, pull camera data for both countries
-make project     # generate the Xcode project
+make bootstrap                               # xcodegen, swiftlint, supabase cli, deno
+make link PROJECT_REF=your-project-ref       # once, so migrations know where to go
+make seed                                    # apply migrations, pull camera data
+make project                                 # generate the Xcode project
 
 open ios/GlidePath.xcodeproj
 ```
+
+`PROJECT_REF` is the last path component of your Supabase dashboard URL:
+`https://supabase.com/dashboard/project/`**`this-bit`**.
 
 Both config files are gitignored; only the `.example` versions are committed.
 `make help` lists everything else.
@@ -46,7 +50,11 @@ is the fastest way to check nothing is broken.
 | Xcode | 26 or later (the UI uses the iOS 26 Liquid Glass APIs) |
 | A Supabase project | free tier is fine |
 | An Apple Team ID | only to run on a physical device |
-| Deno | for the seed scripts, installed by `make bootstrap` |
+| Deno | for the seed scripts |
+
+`make bootstrap` installs the four command-line tools, skipping any you already
+have. If it reports a Homebrew tap conflict on `supabase`, you already have the
+CLI and it will be skipped.
 
 ### One thing the setup does not do
 

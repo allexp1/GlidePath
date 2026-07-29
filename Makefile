@@ -28,8 +28,37 @@ help: ## Show this help
 # ---------------------------------------------------------------------------
 
 .PHONY: bootstrap
-bootstrap: ## Install the toolchain (XcodeGen, SwiftLint, Supabase CLI) via Homebrew
-	brew install xcodegen swiftlint supabase/tap/supabase
+bootstrap: ## Install the toolchain (XcodeGen, SwiftLint, Supabase CLI, Deno) via Homebrew
+	@# Installed one at a time and skipped when already present. Installing them
+	@# as a batch fails the whole command if any single one is already there from
+	@# a different tap, which is exactly what happens with the Supabase CLI: it
+	@# used to live in supabase/tap and now ships in homebrew/core, and Homebrew
+	@# refuses to have both.
+	@for tool in xcodegen swiftlint supabase deno; do \
+		if command -v $$tool >/dev/null 2>&1; then \
+			echo "$$tool: already installed ($$(command -v $$tool))"; \
+		else \
+			echo "$$tool: installing"; \
+			brew install $$tool || exit 1; \
+		fi; \
+	done
+	@echo ""
+	@echo "Toolchain ready. Next:"
+	@echo "  cp Config.example.xcconfig Config.xcconfig   # Supabase keys + Team ID"
+	@echo "  cp supabase/.env.example supabase/.env       # service role key"
+	@echo "  make link PROJECT_REF=<your-project-ref>"
+	@echo "  make seed"
+
+.PHONY: link
+link: ## Link this checkout to your Supabase project (once)
+	@if [ -z "$(PROJECT_REF)" ]; then \
+		echo "Usage: make link PROJECT_REF=<your-project-ref>"; \
+		echo ""; \
+		echo "The ref is the last path component of your dashboard URL:"; \
+		echo "  https://supabase.com/dashboard/project/<this-bit>"; \
+		exit 1; \
+	fi
+	supabase link --project-ref $(PROJECT_REF)
 
 Config.xcconfig:
 	@echo "Config.xcconfig is missing. Creating it from the example."
@@ -108,7 +137,14 @@ seed: ## Apply migrations and load Israel + Moldova camera data (the one setup c
 		echo "supabase/.env is missing. Run: cp supabase/.env.example supabase/.env"; \
 		exit 1; \
 	fi
-	supabase db push
+	@# `db push` needs the checkout linked to a project. Rather than guessing at
+	@# the CLI's internal state file, let it fail and explain the fix.
+	@supabase db push || { \
+		echo ""; \
+		echo "If that failed because no project is linked, run this once:"; \
+		echo "  make link PROJECT_REF=<your-project-ref>"; \
+		exit 1; \
+	}
 	$(MAKE) seed-israel
 	$(MAKE) seed-moldova
 	@echo ""
