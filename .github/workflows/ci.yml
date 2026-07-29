@@ -215,8 +215,12 @@ jobs:
         with:
           version: latest
 
+      # `supabase start`, not `supabase db start`. The latter brings up Postgres
+      # alone, which is enough to prove the SQL is valid but leaves nothing
+      # listening on the API port - so the PostgREST check below was connecting
+      # to a closed socket and dying on curl's exit 7 before it printed a word.
       - name: Start the local stack and apply migrations
-        run: supabase db start
+        run: supabase start
 
       - name: Re-apply from scratch
         run: supabase db reset
@@ -290,14 +294,40 @@ jobs:
           fi
 
           base="http://127.0.0.1:54321/rest/v1"
+
+          # Kong answers after the containers report healthy, not with them, so
+          # without this the first check races the gateway coming up. Any HTTP
+          # response counts as up, deliberately - what the status code should be
+          # is what the checks below are for.
+          for attempt in $(seq 1 30); do
+            if curl -s -o /dev/null -H "apikey: $ANON" "$base/countries_public?limit=1"; then
+              echo "The API gateway is answering after ${attempt}s."
+              break
+            fi
+            if [ "$attempt" = "30" ]; then
+              echo "::error::nothing answering on $base after 30s"
+              supabase status || true
+              exit 1
+            fi
+            sleep 1
+          done
+
           failed=0
 
+          # curl's own exit code is captured rather than left to kill the step:
+          # the job runs under `set -e`, so a bare connection failure inside a
+          # command substitution ends the script before a single line is printed.
+          # That is precisely how this step failed silently with exit 7.
           check() {
             view=$1
             unique=$2
             status=$(curl -s -o /tmp/rest.json -w '%{http_code}' \
               -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
-              "$base/$view?select=*&order=updated_at.asc,$unique.asc&limit=1000&offset=0")
+              "$base/$view?select=*&order=updated_at.asc,$unique.asc&limit=1000&offset=0") || {
+              echo "::error::could not reach $base/$view (curl exit $?)"
+              failed=1
+              return
+            }
             if [ "$status" != "200" ]; then
               echo "::error::$view ordered by $unique returned HTTP $status: $(cat /tmp/rest.json)"
               failed=1
