@@ -351,6 +351,67 @@ jobs:
 
           exit $failed
 
+      # An empty Overpass response used to mean "every camera here is gone", and
+      # the app fades an unverified camera. Two runs against Lithuania minutes
+      # apart returned 0 and then 578 nodes for the same query, so this is a real
+      # night rather than a hypothetical one.
+      - name: A failed harvest must not unverify a whole country
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            declare
+              v_faded int;
+              v_error text;
+              v_run timestamptz := now();
+            begin
+              -- Twelve cameras, all last seen before the run: exactly what an
+              -- empty harvest looks like to finish_country_sync.
+              insert into public.cameras (country_code, location, type, osm_id, source, verified, last_seen_at)
+              select 'IL',
+                     extensions.st_setsrid(extensions.st_makepoint(34.8 + i * 0.001, 32.1), 4326),
+                     'fixed',
+                     'test/harvest/' || i,
+                     'osm',
+                     true,
+                     v_run - interval '1 day'
+                from generate_series(1, 12) as i;
+
+              perform public.finish_country_sync('IL', v_run, null);
+
+              select count(*) into v_faded
+                from public.cameras
+               where osm_id like 'test/harvest/%' and not verified;
+
+              if v_faded > 0 then
+                raise exception 'a wholly empty harvest unverified % of 12 cameras', v_faded;
+              end if;
+
+              select last_sync_error into v_error from public.countries where code = 'IL';
+              if v_error is null or v_error not like '%refused%' then
+                raise exception 'the refusal was not recorded against the country: %', coalesce(v_error, 'null');
+              end if;
+
+              -- One camera going missing is an ordinary mapping change and must
+              -- still be acted on.
+              update public.cameras set last_seen_at = v_run
+               where osm_id like 'test/harvest/%' and osm_id <> 'test/harvest/1';
+
+              perform public.finish_country_sync('IL', v_run, null);
+
+              select count(*) into v_faded
+                from public.cameras
+               where osm_id like 'test/harvest/%' and not verified;
+
+              if v_faded <> 1 then
+                raise exception 'expected exactly the one missing camera to fade, got %', v_faded;
+              end if;
+
+              delete from public.cameras where osm_id like 'test/harvest/%';
+            end
+            \$\$;
+          "
+          echo "A wholly empty harvest is refused; a single removal still lands."
+
       - name: Every public table must have row level security on
         run: |
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -t -c "

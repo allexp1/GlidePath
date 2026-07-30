@@ -229,6 +229,17 @@ unverified. OSM edits get reverted and areas get re-tagged, and a mapping
 accident must not be able to silently switch off warnings for a camera that is
 really there.
 
+**And a failed harvest is not a mapping change.** Overpass answers HTTP 200 with
+an empty element list when an area lookup fails, so "no cameras came back" and
+"there are no cameras" are the same response. Two runs against Lithuania minutes
+apart returned 0 and then 578 camera nodes for the identical query. Believing the
+first would have marked every camera in the country unverified, and the app draws
+an unverified camera faded. `finish_country_sync` therefore refuses to unverify
+more than half a country in one run and records the refusal in
+`countries.last_sync_error`; a single camera disappearing is still acted on
+normally. The guard lives in the database rather than the client because that is
+the only layer that can see how much it is about to write off.
+
 ### How an average-speed section is read
 
 This is the part that took a real country to get right, so it is written down.

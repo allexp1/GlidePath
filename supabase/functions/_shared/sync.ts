@@ -111,6 +111,25 @@ export async function syncCountry(
   log(`[${countryCode}] querying Overpass for average-speed sections`)
   const zoneResponse = await runOverpassQuery(averageSpeedZoneQuery(isoCode), options.overpass)
 
+  // Two queries, one area filter. The section query finding the country proves
+  // the area resolved, so a completely empty camera response is suspect: Overpass
+  // answers 200 with no elements when an area lookup fails, and Lithuania gave 0
+  // then 578 camera nodes minutes apart for the same query.
+  //
+  // Suspect, not fatal. A country really can have no standalone camera nodes -
+  // that was the working theory for Lithuania until the 578 turned up - and
+  // failing the country outright would be its own kind of wrong. The damage an
+  // empty harvest could do is blocked in finish_country_sync instead, which can
+  // see how much of the country it is about to write off. This is here so the run
+  // says out loud that it does not trust what it got.
+  if (cameraResponse.elements.length === 0 && zoneResponse.elements.length > 0) {
+    warnings.push(
+      `the camera query returned nothing while the section query returned ` +
+        `${zoneResponse.elements.length} elements for the same area, which usually means ` +
+        'the camera query failed rather than that this country has no cameras'
+    )
+  }
+
   // ---- Translate ---------------------------------------------------------
 
   const cameras: CameraRow[] = []
