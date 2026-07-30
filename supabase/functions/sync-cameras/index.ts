@@ -92,7 +92,8 @@ Deno.serve(async (request: Request) => {
       })
       reports.push(report)
       console.log(
-        `[${country.code}] done: ${report.cameras} cameras, ${report.zones} zones, ` +
+        `[${country.code}] done: ${report.cameras + report.zoneMarkers} cameras ` +
+          `(${report.zoneMarkers} of them zone entry/exit), ${report.zones} zones, ` +
           `version ${report.datasetVersion}`
       )
     } catch (caught) {

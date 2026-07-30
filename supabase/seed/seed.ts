@@ -100,12 +100,17 @@ async function main(): Promise<number> {
     log: (message) => console.log(`  ${message}`)
   })
 
+  // "point cameras 0" used to be the whole camera story, and in a country whose
+  // enforcement is all section control it read as "no cameras" while hundreds of
+  // entry and exit rows were being written. Both halves are shown now.
   console.log('')
-  console.log(`  point cameras     ${report.cameras}`)
-  console.log(`  zones from OSM    ${report.zones}`)
-  console.log(`  zones from file   ${report.manualZones}`)
-  console.log(`  rest stops        ${report.restStops}`)
-  console.log(`  dataset version   ${report.datasetVersion ?? '(unchanged, dry run)'}`)
+  console.log(`  standalone cameras   ${report.cameras}`)
+  console.log(`  zone entry/exit      ${report.zoneMarkers}`)
+  console.log(`  cameras in total     ${report.cameras + report.zoneMarkers}`)
+  console.log(`  zones from OSM       ${report.zones}`)
+  console.log(`  zones from file      ${report.manualZones}`)
+  console.log(`  rest stops           ${report.restStops}`)
+  console.log(`  dataset version      ${report.datasetVersion ?? '(unchanged, dry run)'}`)
 
   if (report.warnings.length > 0) {
     console.log('')

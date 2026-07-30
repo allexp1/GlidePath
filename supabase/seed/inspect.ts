@@ -14,6 +14,7 @@
  * the real data rather than from the wiki.
  */
 
+import { polylineLength } from '../functions/_shared/geo.ts'
 import type { LatLon } from '../functions/_shared/geo.ts'
 import {
   averageSpeedZoneQuery,
@@ -22,6 +23,8 @@ import {
 } from '../functions/_shared/overpass.ts'
 import type { OverpassElement } from '../functions/_shared/overpass.ts'
 import {
+  parseMaxspeed,
+  roadWayMembers,
   translateAverageSpeedZone,
   translatePointCamera,
   zoneRejectionReason
@@ -176,6 +179,8 @@ async function inspectZones(iso: string): Promise<void> {
     for (const [value, count] of sorted(maxspeeds).slice(0, TOP_N)) listing(value, count)
   }
 
+  reportUnanimityCost(rejects, wayTags)
+
   // A trimmed sample, because a role histogram cannot show whether the ways are
   // actually contiguous and the tags cannot show how long the section is.
   for (const relation of rejects.slice(0, SAMPLE_RELATIONS)) {
@@ -199,6 +204,75 @@ async function inspectZones(iso: string): Promise<void> {
 
     const hidden = members.length - MEMBERS_PER_SAMPLE
     if (hidden > 0) console.log(`    ... and ${hidden} more members`)
+  }
+}
+
+/**
+ * What refusing to guess actually costs.
+ *
+ * The limit is only taken from the road when every road way carries one and they
+ * all agree. That is the honest rule, but it is worth knowing how many sections
+ * it turns away and how close they were, because "a few ways are untagged" and
+ * "this road genuinely changes limit half way along" are different problems with
+ * different answers. Relaxing the rule is a decision to be made on these numbers
+ * rather than on a hunch.
+ */
+function reportUnanimityCost(
+  rejects: OverpassElement[],
+  wayTags: Map<number, Record<string, string>>
+): void {
+  const untaggedShares: number[] = []
+  let wouldLoadFromTagged = 0
+  let taggedAlsoDisagree = 0
+  let disagreeOutright = 0
+
+  for (const relation of rejects) {
+    const roadWays = roadWayMembers(relation.members ?? [])
+    if (roadWays.length === 0) continue
+
+    const limits = roadWays.map((way) => parseMaxspeed(wayTags.get(way.ref)?.maxspeed))
+    if (limits.every((limit) => limit !== null)) {
+      if (new Set(limits).size > 1) disagreeOutright++
+      continue
+    }
+
+    // Some ways are untagged. How much of the road is that, by length?
+    let total = 0
+    let untagged = 0
+    roadWays.forEach((way, index) => {
+      const length = way.geometry ? polylineLength(way.geometry) : 0
+      total += length
+      if (limits[index] === null) untagged += length
+    })
+    if (total > 0) untaggedShares.push(untagged / total)
+
+    const stated = new Set(limits.filter((limit): limit is number => limit !== null))
+    if (stated.size === 1) wouldLoadFromTagged++
+    else if (stated.size > 1) taggedAlsoDisagree++
+  }
+
+  if (untaggedShares.length === 0 && disagreeOutright === 0) return
+
+  console.log('')
+  console.log('  what the "every road way must agree" rule costs:')
+
+  if (untaggedShares.length > 0) {
+    listing('sections with at least one untagged road way', untaggedShares.length)
+    listing('of those, the tagged ways all agree', wouldLoadFromTagged)
+    listing('of those, the tagged ways disagree too', taggedAlsoDisagree)
+
+    const sortedShares = [...untaggedShares].sort((a, b) => a - b)
+    const percent = (value: number) => `${Math.round(value * 100)}%`
+    const median = sortedShares[Math.floor(sortedShares.length / 2)]
+    console.log(
+      `      untagged share of the road: ${percent(sortedShares[0])} at best, ` +
+        `${percent(median)} median, ${percent(sortedShares[sortedShares.length - 1])} at worst`
+    )
+  }
+
+  if (disagreeOutright > 0) {
+    listing('sections where every way has a limit but they differ', disagreeOutright)
+    console.log('      no honest single number exists for these; they stay skipped')
   }
 }
 

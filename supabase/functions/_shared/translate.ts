@@ -220,6 +220,11 @@ function memberPoint(member: OverpassMember): LatLon | null {
 /** Roles under which mappers put the road itself. `section` is the common one. */
 const ROAD_ROLES = new Set(['', 'road', 'section'])
 
+/** The members that make up the road, in relation order. */
+export function roadWayMembers(members: OverpassMember[]): OverpassMember[] {
+  return members.filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role))
+}
+
 /**
  * The limit a section enforces, when the relation itself does not say.
  *
@@ -239,7 +244,7 @@ function limitFromRoadWays(
   members: OverpassMember[],
   wayTags: Map<number, Record<string, string>>
 ): number | null {
-  const roadWays = members.filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role))
+  const roadWays = roadWayMembers(members)
   if (roadWays.length === 0) return null
 
   const limits = new Set<number>()
@@ -394,7 +399,7 @@ export function zoneRejectionReason(
 
   const members = relation.members
   const tags = relation.tags ?? {}
-  const roadWays = members.filter((m) => m.type === 'way' && ROAD_ROLES.has(m.role))
+  const roadWays = roadWayMembers(members)
 
   // ---- The road ----------------------------------------------------------
 

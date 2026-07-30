@@ -76,6 +76,16 @@ export interface SyncReport {
   zones: number
   restStops: number
   manualZones: number
+  /**
+   * Entry and exit rows generated from the zones, two per zone.
+   *
+   * Reported separately because they are cameras as far as the app is concerned
+   * and `cameras` counts only the standalone nodes Overpass returned. Somewhere
+   * like Lithuania, where enforcement is almost entirely section control and the
+   * cameras exist only as relation members, `cameras` is 0 while this is in the
+   * hundreds - and a summary claiming zero cameras there is simply false.
+   */
+  zoneMarkers: number
   datasetVersion: number | null
   warnings: string[]
 }
@@ -175,6 +185,8 @@ export async function syncCountry(
       zones: zones.length,
       restStops: restStops.length,
       manualZones: manualRows.length,
+      // Two per zone, which is what the write step would create.
+      zoneMarkers: (zones.length + manualRows.length) * 2,
       datasetVersion: null,
       warnings
     }
@@ -187,7 +199,7 @@ export async function syncCountry(
   const allZones = [...zones, ...manualRows]
   const zoneIdsByOsmId = await upsertZones(client, allZones, runStartedAt)
   await writeZoneGeometry(client, allZones, zoneIdsByOsmId)
-  await writeZoneMarkerCameras(client, allZones, zoneIdsByOsmId, runStartedAt)
+  const zoneMarkers = await writeZoneMarkerCameras(client, allZones, zoneIdsByOsmId, runStartedAt)
   await assignRestStops(client, allZones, zoneIdsByOsmId, restStops, runStartedAt)
 
   const { data, error } = await client.rpc('finish_country_sync', {
@@ -203,6 +215,7 @@ export async function syncCountry(
     zones: zones.length,
     restStops: restStops.length,
     manualZones: manualRows.length,
+    zoneMarkers,
     datasetVersion: typeof data === 'number' ? data : null,
     warnings
   }
@@ -319,7 +332,7 @@ async function writeZoneMarkerCameras(
   zones: ZoneRow[],
   ids: Map<string, string>,
   seenAt: string
-): Promise<void> {
+): Promise<number> {
   const rows = zones.flatMap((zone) => {
     const zoneId = ids.get(zone.osm_id)
     if (!zoneId) return []
@@ -344,6 +357,8 @@ async function writeZoneMarkerCameras(
     const { error } = await client.from('cameras').upsert(batch, { onConflict: 'osm_id' }).select('id')
     if (error) throw new Error(`zone marker upsert failed: ${error.message}`)
   })
+
+  return rows.length
 }
 
 /**
