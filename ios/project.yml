@@ -110,8 +110,13 @@ targets:
         # Region monitoring and precise GPS are the whole product. Without them
         # the app cannot function, so the App Store should not offer it to
         # devices that lack them.
+        #
+        # arm64, not armv7. armv7 means "requires 32-bit ARM", which no device
+        # running iOS 26 is and which this binary is not built for; App Store
+        # Connect rejects the upload for it. It is a leftover from the era when
+        # every iOS template carried it.
         UIRequiredDeviceCapabilities:
-          - armv7
+          - arm64
           - location-services
           - gps
 

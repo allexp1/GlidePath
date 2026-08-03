@@ -118,6 +118,62 @@ format: ## Autocorrect what SwiftLint can fix
 	swiftlint --fix
 
 # ---------------------------------------------------------------------------
+# Release
+# ---------------------------------------------------------------------------
+#
+# The supported path is the TestFlight workflow in .github/workflows. These are
+# the same thing by hand, for when you want to watch it happen. Either way the
+# one-time setup is in docs/TESTFLIGHT.md.
+
+ARCHIVE ?= ios/build/GlidePath.xcarchive
+
+.PHONY: icon
+icon: ## Regenerate the placeholder app icon
+	python3 scripts/generate-app-icon.py
+
+.PHONY: archive
+archive: project ## Build a signed release archive for the App Store
+	xcodebuild archive \
+		-project $(PROJECT) \
+		-scheme $(SCHEME) \
+		-configuration Release \
+		-destination 'generic/platform=iOS' \
+		-archivePath $(ARCHIVE) \
+		-allowProvisioningUpdates
+
+.PHONY: testflight
+testflight: ## Upload the archive from `make archive` to TestFlight
+	@if [ ! -d "$(ARCHIVE)" ]; then \
+		echo "No archive at $(ARCHIVE). Run: make archive"; \
+		exit 1; \
+	fi
+	@for var in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_PATH; do \
+		if [ -z "$${!var}" ]; then \
+			echo "$$var is not set. See docs/TESTFLIGHT.md."; \
+			exit 1; \
+		fi; \
+	done
+	@# destination=upload hands the build straight to App Store Connect, which
+	@# is the supported route now that altool is deprecated.
+	@printf '%s\n' \
+		'<?xml version="1.0" encoding="UTF-8"?>' \
+		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+		'<plist version="1.0"><dict>' \
+		'<key>method</key><string>app-store-connect</string>' \
+		'<key>destination</key><string>upload</string>' \
+		'<key>uploadSymbols</key><true/>' \
+		'<key>manageAppVersionAndBuildNumber</key><false/>' \
+		'</dict></plist>' > ios/build/ExportOptions.plist
+	xcodebuild -exportArchive \
+		-archivePath $(ARCHIVE) \
+		-exportOptionsPlist ios/build/ExportOptions.plist \
+		-exportPath ios/build/export \
+		-allowProvisioningUpdates \
+		-authenticationKeyPath "$$ASC_KEY_PATH" \
+		-authenticationKeyID "$$ASC_KEY_ID" \
+		-authenticationKeyIssuerID "$$ASC_ISSUER_ID"
+
+# ---------------------------------------------------------------------------
 # Supabase
 # ---------------------------------------------------------------------------
 
@@ -249,3 +305,4 @@ clean: ## Remove build artifacts
 	rm -rf $(CORE_DIR)/.build
 	rm -rf $(PROJECT)
 	rm -rf DerivedData
+	rm -rf ios/build

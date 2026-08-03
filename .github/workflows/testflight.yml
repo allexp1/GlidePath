@@ -1,0 +1,273 @@
+name: TestFlight
+
+# Builds a signed release archive and uploads it to App Store Connect, where it
+# becomes a TestFlight build.
+#
+# Never runs on its own. Uploading is not idempotent - every run consumes a
+# build number and puts something in front of testers - so it fires only when a
+# human asks, either by dispatching it or by pushing a v* tag.
+#
+# The one-time setup this depends on is in docs/TESTFLIGHT.md. Every secret it
+# reads is listed there, with where to get it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: "Version shown to testers, e.g. 1.0.1. Blank keeps ios/project.yml's value."
+        required: false
+        type: string
+      build_number:
+        description: "Build number. Blank uses the run number, which is what you normally want."
+        required: false
+        type: string
+      notify_testers:
+        description: "Let App Store Connect notify external testers once it is processed."
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  # Never two uploads at once. They would race for build numbers and the loser
+  # is rejected after a full build has already been paid for.
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Build and upload
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail before spending twenty minutes on a build that cannot be uploaded.
+      # A missing secret otherwise surfaces at the very last step.
+      - name: Check the required secrets are present
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+          CERT: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          for name in TEAM_ID BUNDLE_ID CERT CERT_PASSWORD KEY_ID ISSUER_ID \
+                      PRIVATE_KEY SUPABASE_URL SUPABASE_ANON_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            echo "See docs/TESTFLIGHT.md for where each one comes from."
+            exit 1
+          fi
+          echo "All required secrets are set."
+
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The keychain is created fresh and deleted in the always() step below.
+      # Importing into the runner's login keychain would leave a signing
+      # identity behind on a machine that is shared between jobs.
+      - name: Import the distribution certificate
+        env:
+          CERT: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/glidepath-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          security import "$RUNNER_TEMP/distribution.p12" \
+            -k "$KEYCHAIN" \
+            -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # Without this, codesign blocks on a GUI prompt that nothing can
+          # answer and the job hangs until it times out.
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+
+          # Prepended, not replaced: dropping the system roots breaks TLS
+          # verification for everything else in the job.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          rm -f "$RUNNER_TEMP/distribution.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Write the App Store Connect API key
+        env:
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          # The .p8 is a PEM file whose newlines matter. Storing it base64 in
+          # the secret is what stops the GitHub UI mangling them.
+          echo "$PRIVATE_KEY" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+          if ! head -1 "$KEY_PATH" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "::error::APP_STORE_CONNECT_PRIVATE_KEY did not decode to a PEM key."
+            echo "Store it as: base64 -i AuthKey_XXXX.p8 | pbcopy"
+            exit 1
+          fi
+
+      - name: Work out the version and build number
+        id: version
+        env:
+          INPUT_MARKETING: ${{ inputs.marketing_version }}
+          INPUT_BUILD: ${{ inputs.build_number }}
+        run: |
+          marketing="$INPUT_MARKETING"
+          if [ -z "$marketing" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            # v1.2.3 -> 1.2.3
+            marketing="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$marketing" ]; then
+            marketing=$(grep -m1 'MARKETING_VERSION:' ios/project.yml | sed 's/.*"\(.*\)".*/\1/')
+          fi
+
+          # The build number must be unique for a given marketing version or
+          # App Store Connect rejects the upload after the whole build. The run
+          # number only ever increases, which is exactly the property needed.
+          build="$INPUT_BUILD"
+          if [ -z "$build" ]; then build="$GITHUB_RUN_NUMBER"; fi
+
+          echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Building $marketing ($build)"
+
+      - name: Write Config.xcconfig
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+        run: |
+          # Automatic signing, paired with -allowProvisioningUpdates and the API
+          # key on the xcodebuild calls below. That combination lets Xcode
+          # create and download the distribution profile itself, which is the
+          # difference between this workflow needing two secrets and needing a
+          # provisioning profile that somebody has to remember to re-export
+          # every time it expires.
+          #
+          # Manual would need PROVISIONING_PROFILE_SPECIFIER and a profile
+          # shipped as a secret; -allowProvisioningUpdates does nothing for it.
+          cat > Config.xcconfig <<EOF
+          SUPABASE_URL = $SUPABASE_URL
+          SUPABASE_ANON_KEY = $SUPABASE_ANON_KEY
+          DEVELOPMENT_TEAM = $TEAM_ID
+          PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID
+          CODE_SIGN_STYLE = Automatic
+          EOF
+          # Deliberately not echoed. The anon key is safe to ship in a binary
+          # but there is no reason to put it in a public build log.
+          echo "Config.xcconfig written ($(wc -l < Config.xcconfig) lines)."
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      # The engine tests are seconds and need no simulator. Shipping a build to
+      # testers without them having run is not worth the time saved.
+      - name: Run the engine tests
+        working-directory: ios/Packages/GlidePathCore
+        run: swift test
+
+      - name: Archive
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project ios/GlidePath.xcodeproj \
+            -scheme GlidePath \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $SIGNING_KEYCHAIN" \
+            MARKETING_VERSION="${{ steps.version.outputs.marketing }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}"
+
+      - name: Export and upload to App Store Connect
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # destination=upload hands the build straight to App Store Connect,
+          # which is the supported path now that altool is deprecated.
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>testFlightInternalTestingOnly</key><${{ inputs.notify_testers && 'false' || 'true' }}/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### Uploaded to TestFlight"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Version | ${{ steps.version.outputs.marketing }} |"
+            echo "| Build | ${{ steps.version.outputs.build }} |"
+            echo "| Commit | \`${GITHUB_SHA:0:8}\` |"
+            echo ""
+            echo "App Store Connect takes a few minutes to process it. It appears"
+            echo "under TestFlight once processing finishes."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs even when the build failed, so a signing identity is never left
+      # behind on a shared runner.
+      - name: Clean up the keychain and key
+        if: always()
+        run: |
+          rm -f "$ASC_KEY_PATH" || true
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" || true
+          fi
