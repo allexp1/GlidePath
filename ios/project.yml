@@ -91,6 +91,20 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+
+        # Declared by hand, and it has to be.
+        #
+        # Xcode normally injects this by merging the partial Info.plist that
+        # actool emits. That merge does not reach a target using an explicit
+        # INFOPLIST_FILE, which is what XcodeGen generates - so the icon
+        # compiles into Assets.car, the rendered PNGs land in the bundle, the
+        # app shows an icon on the home screen, and Info.plist has no
+        # CFBundleIconName. App Store Connect reads that key and only that key,
+        # and rejects the upload with "Missing required icon file".
+        #
+        # Confirmed against a real archive in CI, which failed on exactly this
+        # after the icon itself was already rendering correctly.
+        CFBundleIconName: AppIcon
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
 
