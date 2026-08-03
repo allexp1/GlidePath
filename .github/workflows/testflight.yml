@@ -174,7 +174,10 @@ jobs:
           #
           # Manual would need PROVISIONING_PROFILE_SPECIFIER and a profile
           # shipped as a secret; -allowProvisioningUpdates does nothing for it.
-          cat > Config.xcconfig <<EOF
+          # sed for the same reason as the plist below: the block scalar indents
+          # every line, and there is no reason to hand the xcconfig parser
+          # leading whitespace to be tolerant about.
+          sed 's/^ *//' > Config.xcconfig <<EOF
           SUPABASE_URL = $SUPABASE_URL
           SUPABASE_ANON_KEY = $SUPABASE_ANON_KEY
           DEVELOPMENT_TEAM = $TEAM_ID
@@ -222,7 +225,12 @@ jobs:
         run: |
           # destination=upload hands the build straight to App Store Connect,
           # which is the supported path now that altool is deprecated.
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          #
+          # Piped through sed because a YAML block scalar indents every line of
+          # the heredoc, and an XML declaration is only legal at byte 0 of the
+          # document. Ten leading spaces before <?xml is a fatal parse error,
+          # and the failure lands at the export step after the whole archive.
+          sed 's/^ *//' > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
