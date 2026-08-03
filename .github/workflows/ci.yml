@@ -170,9 +170,15 @@ jobs:
           else
             echo "ok   CFBundleIconName = $icon"
           fi
-          if [ ! -f "$APP/AppIcon60x60@2x.png" ]; then
-            echo "::error::no rendered app icon in the bundle"
-            failed=1
+          # A warning, not a failure. Which loose PNGs actool emits alongside
+          # Assets.car is an Xcode implementation detail that has changed before
+          # and will again; CFBundleIconName above is the thing App Store
+          # Connect actually validates. Failing on this would eventually turn
+          # the build red over nothing.
+          if ls "$APP"/AppIcon*.png >/dev/null 2>&1; then
+            echo "ok   rendered icon variants present"
+          else
+            echo "::warning::no loose AppIcon PNGs in the bundle; check the icon still renders"
           fi
 
           # armv7 means "requires 32-bit ARM", which no device running iOS 26 is
