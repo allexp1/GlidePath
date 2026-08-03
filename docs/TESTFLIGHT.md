@@ -10,6 +10,15 @@ Both are deliberate acts. The workflow never runs on a normal push: uploading
 consumes a build number and puts something in front of testers, and neither of
 those should happen because somebody fixed a typo.
 
+> **The Run workflow button only appears once `testflight.yml` is on the default
+> branch.** That is a GitHub rule about `workflow_dispatch`, not a setting: a
+> workflow sitting on a feature branch is invisible to the Actions UI, and the
+> button's absence looks exactly like the file being broken. Merge first.
+>
+> Tags are not subject to it — a `push` event uses the workflow file from the
+> commit being tagged — so tagging a branch commit does work. Merging is still
+> the better path.
+
 ---
 
 ## What has to be done by hand once

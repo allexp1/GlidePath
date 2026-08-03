@@ -101,6 +101,111 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM=""
 
+  # The release build, unsigned.
+  #
+  # The `app` job above builds Debug for a simulator, which is not what ships.
+  # This runs the same `xcodebuild archive -configuration Release` the TestFlight
+  # workflow runs, minus the signing, so a Release-only compile failure is caught
+  # here rather than twenty minutes into a job that somebody had to set up seven
+  # secrets for.
+  #
+  # It also checks the two things that fail App Store Connect *validation* rather
+  # than the build, and so would otherwise only surface after an upload.
+  archive:
+    name: Release archive
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create a placeholder configuration
+        run: cp Config.example.xcconfig Config.xcconfig
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project ios/GlidePath.xcodeproj \
+            -scheme GlidePath \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: The archive must pass the checks App Store Connect makes
+        run: |
+          APP="$RUNNER_TEMP/GlidePath.xcarchive/Products/Applications/GlidePath.app"
+          PLIST="$APP/Info.plist"
+
+          if [ ! -d "$APP" ]; then
+            echo "::error::the archive contains no app bundle"
+            exit 1
+          fi
+
+          read_key() { /usr/libexec/PlistBuddy -c "Print :$1" "$PLIST" 2>/dev/null || true; }
+
+          failed=0
+
+          # CFBundleIconName is written by the asset catalogue compiler, and only
+          # when the AppIcon set actually contains an image. The set shipped with
+          # an empty 1024x1024 slot, which builds perfectly and is rejected on
+          # upload as "Missing required icon file".
+          icon=$(read_key CFBundleIconName)
+          if [ -z "$icon" ]; then
+            echo "::error::CFBundleIconName is missing - the AppIcon set has no image in it"
+            failed=1
+          else
+            echo "ok   CFBundleIconName = $icon"
+          fi
+          if [ ! -f "$APP/AppIcon60x60@2x.png" ]; then
+            echo "::error::no rendered app icon in the bundle"
+            failed=1
+          fi
+
+          # armv7 means "requires 32-bit ARM", which no device running iOS 26 is
+          # and which this binary is not built for. App Store Connect rejects it.
+          if read_key UIRequiredDeviceCapabilities | grep -qi armv7; then
+            echo "::error::UIRequiredDeviceCapabilities still lists armv7"
+            failed=1
+          else
+            echo "ok   UIRequiredDeviceCapabilities has no armv7"
+          fi
+
+          # Without this key every upload stops and waits for a human to answer
+          # the export compliance question.
+          if [ "$(read_key ITSAppUsesNonExemptEncryption)" != "false" ]; then
+            echo "::error::ITSAppUsesNonExemptEncryption is not false"
+            failed=1
+          else
+            echo "ok   export compliance is declared"
+          fi
+
+          # The background modes the product depends on. Losing either one is
+          # silent: the app builds, installs, and simply never speaks.
+          for mode in location audio; do
+            if read_key UIBackgroundModes | grep -q "$mode"; then
+              echo "ok   background mode: $mode"
+            else
+              echo "::error::UIBackgroundModes is missing $mode"
+              failed=1
+            fi
+          done
+
+          exit $failed
+
   lint:
     name: SwiftLint
     runs-on: macos-latest
