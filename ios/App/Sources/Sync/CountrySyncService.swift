@@ -22,48 +22,14 @@ import Observation
 @MainActor
 @Observable
 final class CountrySyncService {
-    struct CountryStatus: Identifiable, Equatable, Sendable {
-        let code: String
-        let name: String
-        let serverVersion: Int
-        let installedVersion: Int?
-        let cameraCount: Int
-        let zoneCount: Int
-        let installedAt: Date?
-
-        /// When the server last pulled this country from OpenStreetMap. Nil
-        /// means never, which is a different thing from "mapped and empty".
-        let lastSyncedAt: Date?
-
-        var id: String { code }
-        var isInstalled: Bool { installedVersion != nil }
-        var hasUpdate: Bool {
-            guard let installedVersion else { return false }
-            return serverVersion > installedVersion
-        }
-
-        /// Something worth downloading.
-        var hasData: Bool { cameraCount > 0 || zoneCount > 0 }
-
-        /// Checked, and genuinely nothing there. Worth saying out loud so the
-        /// driver does not think the app is broken.
-        var isKnownEmpty: Bool { lastSyncedAt != nil && !hasData }
-
-        /// Nobody has pulled this country yet, so we simply do not know.
-        var isUnsurveyed: Bool { lastSyncedAt == nil && !hasData }
-
-        /// A crude size estimate for the download. Each camera is a handful of
-        /// doubles and a UUID; zones add a polyline, which dominates. Deliberately
-        /// generous, because promising 2 MB and using 6 is the annoying direction.
-        var estimatedBytes: Int {
-            cameraCount * 180 + zoneCount * 2_400
-        }
-    }
-
     enum Progress: Equatable, Sendable {
         case idle
         case checking
         case downloading(country: String, fraction: Double)
+        /// Its own case rather than a flag on `downloading`: the two are offered
+        /// as separate rows on the same screen, and a shared case leaves the UI
+        /// unable to say which of them the spinner belongs to.
+        case downloadingLimits(country: String, fraction: Double)
         case failed(country: String, message: String)
     }
 
@@ -71,12 +37,26 @@ final class CountrySyncService {
     private(set) var progress: Progress = .idle
     private(set) var lastCheckedAt: Date?
 
-    private let database: LocalDatabase
-    private let client: SupabaseREST
+    // Internal rather than private: the road-limit half of this type lives in
+    // CountrySyncService+RoadLimits.swift, and `private` is file scope.
+    let database: LocalDatabase
+    let client: SupabaseREST
 
     init(database: LocalDatabase, client: SupabaseREST) {
         self.database = database
         self.client = client
+    }
+
+    /// Setters for the two published properties, for the same reason.
+    ///
+    /// Methods rather than dropping `private(set)`, so the only code that can
+    /// move either one is still inside this type.
+    func report(_ progress: Progress) {
+        self.progress = progress
+    }
+
+    func reloadStatuses() async {
+        countries = (try? await loadStatuses()) ?? []
     }
 
     // MARK: - Catalogue
@@ -113,15 +93,18 @@ final class CountrySyncService {
                     sql: """
                         INSERT INTO country
                             (code, name, dataset_version, min_compatible_version,
-                             camera_count, zone_count, last_synced_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                             camera_count, zone_count, last_synced_at,
+                             road_limit_version, road_limit_count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(code) DO UPDATE SET
                             name = excluded.name,
                             dataset_version = excluded.dataset_version,
                             min_compatible_version = excluded.min_compatible_version,
                             camera_count = excluded.camera_count,
                             zone_count = excluded.zone_count,
-                            last_synced_at = excluded.last_synced_at
+                            last_synced_at = excluded.last_synced_at,
+                            road_limit_version = excluded.road_limit_version,
+                            road_limit_count = excluded.road_limit_count
                         """,
                     arguments: [
                         country.code,
@@ -130,7 +113,11 @@ final class CountrySyncService {
                         country.minCompatibleVersion,
                         country.cameraCount,
                         country.zoneCount,
-                        country.lastSyncedAt
+                        country.lastSyncedAt,
+                        // Nil on a project that has not applied the road-limit
+                        // migration, which reads correctly as "none available".
+                        country.roadLimitVersion ?? 0,
+                        country.roadLimitCount ?? 0
                     ]
                 )
             }
@@ -148,7 +135,10 @@ final class CountrySyncService {
                     cameraCount: row["camera_count"],
                     zoneCount: row["zone_count"],
                     installedAt: row["installed_at"],
-                    lastSyncedAt: row["last_synced_at"]
+                    lastSyncedAt: row["last_synced_at"],
+                    roadLimitVersion: row["road_limit_version"] ?? 0,
+                    roadLimitCount: row["road_limit_count"] ?? 0,
+                    roadLimitsInstalledVersion: row["road_limits_installed_version"]
                 )
             }
         }

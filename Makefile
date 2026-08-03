@@ -220,6 +220,20 @@ inspect: ## Explain why a country loaded nothing, e.g. make inspect CODE=LT
 	fi; \
 	cd supabase/seed && deno run --allow-net --allow-read inspect.ts "$$code"
 
+.PHONY: seed-limits
+seed-limits: ## Harvest posted road speed limits, e.g. make seed-limits CODE=LT (slow, resumable)
+	@code=$$(printf '%s' "$(CODE)" | tr -d '<>'); \
+	if [ -z "$$code" ]; then \
+		echo "Usage: make seed-limits CODE=<ISO 3166-1 alpha-2>"; \
+		echo "  e.g. make seed-limits CODE=LT"; \
+		echo ""; \
+		echo "A few hundred Overpass queries covering a whole country. It runs for"; \
+		echo "tens of minutes. Ctrl-C is safe: every finished tile is checkpointed"; \
+		echo "and re-running resumes from there."; \
+		exit 1; \
+	fi; \
+	cd supabase/seed && deno run --allow-net --allow-env --allow-read --allow-write seed_limits.ts "$$code"
+
 .PHONY: seed-dry-run
 seed-dry-run: ## Show what seeding would change without writing to the database
 	cd supabase/seed && deno run --allow-net --allow-env --allow-read seed.ts israel --dry-run

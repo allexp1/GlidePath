@@ -9,6 +9,7 @@ protocol CameraDataStore: Sendable {
     func zones(near coordinate: Coordinate, radiusMeters: Double, limit: Int) async throws -> [Zone]
     func cameras(near coordinate: Coordinate, radiusMeters: Double, limit: Int) async throws -> [Camera]
     func zone(id: String) async throws -> Zone?
+    func roadLimits(near coordinate: Coordinate, radiusMeters: Double) async throws -> [RoadLimit]
 }
 
 /// What the driver actually hears. Implemented by the audio layer.
@@ -37,6 +38,16 @@ final class DriveMonitor {
     private(set) var nearbyZones: [Zone] = []
     private(set) var isMonitoring = false
 
+    /// The road the driver is currently held to be on, and its posted limit.
+    /// Nil is normal and common: no limit data downloaded, or a road nobody has
+    /// tagged.
+    private(set) var currentRoadLimit: RoadLimitMatcher.Match?
+
+    /// The smoothed speed the limit roundel shows. Smoothed rather than raw
+    /// because a number flickering by three every second is unreadable at a
+    /// glance, which is the only way it is ever read.
+    private(set) var currentSpeedKph: Double?
+
     /// True while precise tracking is on, which the UI surfaces so the battery
     /// cost is never a surprise.
     var isInZone: Bool { session != nil }
@@ -54,6 +65,15 @@ final class DriveMonitor {
     private var approachMonitor = CameraApproachMonitor()
     private var refreshTask: Task<Void, Never>?
 
+    private var limitMatcher = RoadLimitMatcher()
+    private var limitMonitor = SpeedLimitMonitor()
+    private var speedSmoother = SpeedSmoother()
+
+    /// Speed limits for the roads around the driver, reloaded as they move.
+    private var nearbyRoadLimits: [RoadLimit] = []
+    private var limitRefreshTask: Task<Void, Never>?
+    private var lastLimitRefreshCentre: Coordinate?
+
     /// Zones whose entry geofence has fired and which we are watching for a
     /// real crossing. Keyed by zone id.
     private var armedZoneIDs: Set<String> = []
@@ -69,6 +89,15 @@ final class DriveMonitor {
         var announcePointCameras = true
         var announceMobileHotspots = true
         var announceRedLightCameras = true
+
+        /// Speak when the driver has been over the posted limit for a few
+        /// seconds. Separate from `showSpeedLimit`, because wanting the number
+        /// on screen and wanting to be told about it are different wants.
+        var announceSpeedLimit = true
+
+        /// Track the limit at all. Off means the matcher never runs, which also
+        /// removes the roundel and the per-fix lookup.
+        var showSpeedLimit = true
 
         static let `default` = Settings()
     }
@@ -101,7 +130,19 @@ final class DriveMonitor {
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        location.startStandbyTracking()
+
+        // Drive mode, not standby. Warnings are computed per fix against a
+        // window at most 900 m wide, and significant-location changes do not
+        // arrive anywhere near often enough to land inside one. Standby is for
+        // when the app is not watching.
+        location.startDriveTracking()
+
+        // Seed the camera set and the region window from wherever the phone
+        // already believes it is, so the first stretch of a drive is covered
+        // before the first fresh fix arrives.
+        if let fix = location.latestFix {
+            refreshGeofences(around: fix.coordinate)
+        }
 
         // A relaunch can happen anywhere, including in the middle of a zone.
         // Region monitoring only reports crossings, so without this an app
@@ -112,24 +153,131 @@ final class DriveMonitor {
     func stop() {
         isMonitoring = false
         refreshTask?.cancel()
+        limitRefreshTask?.cancel()
         endSession(reason: .cancelled, speak: false)
         location.stopAll()
         voice.stop()
+
+        limitMatcher.reset()
+        limitMonitor.reset()
+        speedSmoother.reset()
+        currentRoadLimit = nil
+        currentSpeedKph = nil
+        lastLimitRefreshCentre = nil
     }
 
     // MARK: - Fixes
 
     private func handle(fix: LocationFix) {
+        if let speedKph = fix.speedKph {
+            speedSmoother.add(speedKph: speedKph, at: fix.timestamp)
+            currentSpeedKph = speedSmoother.smoothedKph
+        }
+
         if session != nil {
             advanceSession(with: fix)
         } else {
             checkForEntry(fix: fix)
             announceApproachingCameras(fix: fix)
+            // Only outside a zone. Inside one the receiver is already giving
+            // everything it has and must not be turned down.
+            location.setDriveResolution(nearestFeatureMeters: distanceToNearestFeature(from: fix))
         }
+
+        updateRoadLimit(fix: fix)
 
         if geofences.needsRefresh(at: fix.coordinate) {
             refreshGeofences(around: fix.coordinate)
         }
+    }
+
+    // MARK: - Posted speed limits
+
+    /// How far the driver must move before the limit window is rebuilt.
+    ///
+    /// Much tighter than the geofence window, and it has to be: the window is
+    /// only a few hundred metres wide because matching projects every candidate
+    /// on every fix, so it goes stale in seconds at motorway speed.
+    private static let limitRefreshThreshold: Double = 500
+
+    /// Radius of the limit window. Wide enough to survive until the next
+    /// refresh, narrow enough that a city centre does not load every side
+    /// street within a kilometre.
+    private static let limitWindowRadius: Double = 1_200
+
+    private func updateRoadLimit(fix: LocationFix) {
+        guard settings.showSpeedLimit else {
+            currentRoadLimit = nil
+            limitMatcher.reset()
+            limitMonitor.reset()
+            return
+        }
+
+        if needsLimitRefresh(at: fix.coordinate) {
+            refreshRoadLimits(around: fix.coordinate)
+        }
+
+        let match = limitMatcher.update(fix: fix, candidates: nearbyRoadLimits)
+        currentRoadLimit = match
+
+        // Inside a zone the coaching engine owns the voice. It is already
+        // telling the driver what speed to hold, worked out from the same road
+        // and aimed at a camera that is actually there; a second voice saying
+        // something adjacent about the same stretch of tarmac is noise at the
+        // one moment the driver most needs to hear one clear number.
+        guard session == nil else {
+            _ = limitMonitor.update(fix: fix, limitKph: nil)
+            return
+        }
+
+        guard let exceedance = limitMonitor.update(fix: fix, limitKph: match?.limitKph) else {
+            return
+        }
+        guard settings.announceSpeedLimit else { return }
+
+        speak(phrasebook.speedLimitExceeded(exceedance), urgent: false)
+    }
+
+    private func needsLimitRefresh(at coordinate: Coordinate) -> Bool {
+        guard let centre = lastLimitRefreshCentre else { return true }
+        return centre.distance(to: coordinate) > Self.limitRefreshThreshold
+    }
+
+    private func refreshRoadLimits(around coordinate: Coordinate) {
+        // Claimed before the query starts, for the same reason the geofence
+        // refresh does it: at 1 Hz, every fix arriving while a read is in
+        // flight would launch another one.
+        lastLimitRefreshCentre = coordinate
+
+        limitRefreshTask?.cancel()
+        limitRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            let limits = (try? await store.roadLimits(
+                near: coordinate,
+                radiusMeters: Self.limitWindowRadius
+            )) ?? []
+
+            guard !Task.isCancelled else { return }
+            self.nearbyRoadLimits = limits
+        }
+    }
+
+    /// Distance to the nearest thing the app would speak about, which is what
+    /// decides how hard the receiver is worked. Nil when there is nothing
+    /// loaded nearby at all.
+    private func distanceToNearestFeature(from fix: LocationFix) -> Double? {
+        let cameraDistance = nearbyCameras
+            .lazy
+            .filter { !$0.type.isZoneMarker }
+            .map { fix.coordinate.distance(to: $0.coordinate) }
+            .min()
+
+        let zoneDistance = nearbyZones
+            .lazy
+            .map { fix.coordinate.distance(to: $0.entry) }
+            .min()
+
+        return [cameraDistance, zoneDistance].compactMap { $0 }.min()
     }
 
     /// Feeds the engine and says whatever it decides.
@@ -187,21 +335,36 @@ final class DriveMonitor {
     }
 
     private func announceApproachingCameras(fix: LocationFix) {
-        guard settings.announcePointCameras else { return }
-
         let approaches = approachMonitor.update(fix: fix, cameras: nearbyCameras)
         for approach in approaches {
-            guard shouldAnnounce(approach.camera) else { continue }
-            guard let line = phrasebook.cameraApproach(approach) else { continue }
-            speak(line, urgent: approach.urgency == .imminent)
+            announce(approach)
         }
     }
 
+    private func announce(_ approach: CameraApproach) {
+        guard shouldAnnounce(approach.camera) else { return }
+        guard let line = phrasebook.cameraApproach(approach) else { return }
+        speak(line, urgent: approach.urgency == .imminent)
+    }
+
+    /// Which of the four "what to announce" switches governs this camera.
+    ///
+    /// Every type maps to exactly one switch. The previous version gated the
+    /// whole approach path on `announcePointCameras` before consulting this,
+    /// which made the red light and mobile switches unreachable: turning speed
+    /// cameras off turned everything off.
     private func shouldAnnounce(_ camera: Camera) -> Bool {
         switch camera.type {
-        case .mobileHotspot: return settings.announceMobileHotspots
-        case .redLight: return settings.announceRedLightCameras
-        default: return true
+        case .mobileHotspot:
+            return settings.announceMobileHotspots
+        case .redLight:
+            return settings.announceRedLightCameras
+        case .fixed, .combined, .seatbeltPhone, .busLane:
+            return settings.announcePointCameras
+        case .zoneEntry, .zoneExit:
+            // Zone markers are the section's own cameras. The zone switch owns
+            // them, and the approach monitor skips them anyway.
+            return settings.announceZones
         }
     }
 
@@ -257,10 +420,18 @@ final class DriveMonitor {
             location.startPreciseTracking()
             Task { await loadZoneIfNeeded(zoneID) }
 
-        case .camera:
-            // Point cameras do not need precise tracking; the standby stream is
-            // enough to time a warning.
-            break
+        case let .camera(cameraID):
+            // The backstop for a warning the fix stream did not manage to
+            // deliver: a tunnel, a cold start, a receiver that had not settled.
+            // Normally the ordinary window has already spoken by 350 m and
+            // `announceGeofenceCrossing` returns nil, so this stays silent.
+            guard session == nil else { return }
+            guard let fix = location.latestFix else { return }
+            guard let camera = nearbyCameras.first(where: { $0.id == cameraID }) else { return }
+
+            if let approach = approachMonitor.announceGeofenceCrossing(of: camera, at: fix) {
+                announce(approach)
+            }
         }
     }
 

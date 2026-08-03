@@ -42,3 +42,6 @@ supabase/seed/out/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Resume checkpoints written by seed_limits.ts.
+supabase/seed/.limits-*.json

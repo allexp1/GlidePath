@@ -99,6 +99,25 @@ A stop is tied to a zone when it projects within 250 metres of the zone's road
 and sits more than 100 metres from either camera. Distance along the road is
 computed at seed time so the phone never projects rest stops on the hot path.
 
+### Posted speed limits
+
+`way[highway][maxspeed]`, restricted to the highway values a car can be ticketed
+on, harvested a quarter-degree tile at a time by `make seed-limits CODE=XX`. This
+is a bigger dataset than everything above it put together and it has its own
+page: [SPEED_LIMITS.md](SPEED_LIMITS.md).
+
+The one rule worth repeating here, because it inverts the bias the rest of this
+file describes: for limits, a row is **dropped** rather than kept when the tag
+carries no number. `maxspeed=LT:urban` is not resolved against a table of
+national defaults. Warning about a camera that has been removed costs a moment of
+irritation; stating a limit nobody can source is a claim about a sign the driver
+may act on without looking at it.
+
+It is also the one dataset the nightly job does not touch — a national road
+network takes far longer to fetch than an Edge Function is allowed to live, so a
+scheduled version would fail every night in the way that looks like it is
+working.
+
 ## The nightly job
 
 `supabase/functions/sync-cameras`, fired by `pg_cron` through `pg_net` at 03:17

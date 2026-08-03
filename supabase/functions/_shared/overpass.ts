@@ -7,7 +7,7 @@
  * runs at an odd minute rather than on the hour.
  */
 
-import type { LatLon } from './geo.ts'
+import type { BoundingBox, LatLon } from './geo.ts'
 
 export const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -24,6 +24,8 @@ export interface OverpassElement {
   /** Present on ways when the query used `out geom`. */
   geometry?: LatLon[]
   members?: OverpassMember[]
+  /** Present when the query used `out bb`. */
+  bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number }
 }
 
 export interface OverpassMember {
@@ -100,6 +102,76 @@ area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
   way["highway"="services"](area.country);
 );
 out center qt;`
+}
+
+/**
+ * The `highway` values a car can be ticketed on.
+ *
+ * Not "every value with a maxspeed tag". Driveways and parking aisles are
+ * `service` and are routinely tagged `maxspeed=10`; a car crossing a supermarket
+ * car park at 30 is not speeding, and being told so would teach the driver that
+ * the limit alerts are noise. `track` is the same argument for farm tracks.
+ * Footways and cycleways carry maxspeed for bicycles and are not roads at all.
+ */
+export const DRIVABLE_HIGHWAY_VALUES = [
+  'motorway',
+  'motorway_link',
+  'trunk',
+  'trunk_link',
+  'primary',
+  'primary_link',
+  'secondary',
+  'secondary_link',
+  'tertiary',
+  'tertiary_link',
+  'unclassified',
+  'residential',
+  'living_street',
+  'busway',
+  'road'
+]
+
+/**
+ * Where a country actually is, so the tiler knows what to cover.
+ *
+ * `out bb` returns the bounding box and nothing else, which is a few hundred
+ * bytes for a query that would otherwise be the entire national boundary
+ * polygon.
+ */
+export function countryBoundsQuery(isoCode: string, timeoutSeconds = 90): string {
+  return `[out:json][timeout:${timeoutSeconds}];
+relation["ISO3166-1"="${isoCode}"][admin_level=2];
+out bb;`
+}
+
+/**
+ * Posted speed limits for one tile of one country.
+ *
+ * Both the area filter and the bounding box, which sounds redundant and is not.
+ * The bbox is what keeps a single answer small enough to arrive at all; the area
+ * filter is what stops a tile on the border returning the neighbouring country's
+ * roads and filing them under the wrong dataset.
+ *
+ * The union's second half catches ways tagged only `maxspeed:forward`, which is
+ * how an asymmetric limit is mapped when the two directions have no common
+ * value. Rare, but a way tagged that way is a real road with a real limit and
+ * the first half of the union will never see it.
+ */
+export function roadLimitQuery(
+  isoCode: string,
+  tile: BoundingBox,
+  timeoutSeconds = 180
+): string {
+  const bbox = `${tile.minLat},${tile.minLon},${tile.maxLat},${tile.maxLon}`
+  const highways = DRIVABLE_HIGHWAY_VALUES.join('|')
+
+  return `[out:json][timeout:${timeoutSeconds}];
+area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
+(
+  way["highway"~"^(${highways})$"]["maxspeed"](area.country)(${bbox});
+  way["highway"~"^(${highways})$"]["maxspeed:forward"](area.country)(${bbox});
+);
+out geom qt;`
 }
 
 export interface OverpassOptions {

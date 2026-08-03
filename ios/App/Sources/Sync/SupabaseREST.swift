@@ -67,27 +67,59 @@ struct SupabaseREST: Sendable {
         var offset = 0
 
         while true {
-            var query = filters
-            query["select"] = "*"
-            query["order"] = "updated_at.asc,\(uniqueColumn).asc"
-            query["limit"] = String(Self.pageSize)
-            query["offset"] = String(offset)
-
-            if let since {
-                // PostgREST wants the operator inline. Strictly greater than,
-                // so a row is never fetched twice, and the cursor is only moved
-                // once a page has been written.
-                query["updated_at"] = "gt.\(Self.timestampFormatter.string(from: since))"
-            }
-
-            let page: [T] = try await get(view, query: query)
+            let page: [T] = try await fetchPage(
+                type,
+                from: view,
+                filters: filters,
+                since: since,
+                uniqueColumn: uniqueColumn,
+                offset: offset
+            )
             results.append(contentsOf: page)
+            offset += page.count
 
             if page.count < Self.pageSize { break }
-            offset += Self.pageSize
         }
 
         return results
+    }
+
+    /// One page of a view, for callers that cannot afford to hold all of them.
+    ///
+    /// This exists for road limits and only for road limits. Every other view
+    /// here is a few thousand rows and `fetchAll` is simpler; a country's speed
+    /// limits are hundreds of thousands of rows each carrying a polyline, and
+    /// holding the whole download in memory before writing any of it is how an
+    /// app gets killed by the watchdog on a phone with other things open.
+    ///
+    /// Returning a page rather than taking a per-page closure is deliberate. The
+    /// caller writing each page is main-actor work, and a callback would have to
+    /// carry that isolation across this nonisolated boundary; letting the caller
+    /// own the loop keeps every crossing to a plain `await` on a value type.
+    ///
+    /// A page shorter than `pageSize` is the last one.
+    func fetchPage<T: Decodable & Sendable>(
+        _ type: T.Type,
+        from view: String,
+        filters: [String: String] = [:],
+        since: Date? = nil,
+        uniqueColumn: String = "id",
+        offset: Int
+    ) async throws -> [T] {
+        var query = filters
+        query["select"] = "*"
+        query["order"] = "updated_at.asc,\(uniqueColumn).asc"
+        query["limit"] = String(Self.pageSize)
+        query["offset"] = String(offset)
+
+        if let since {
+            // PostgREST wants the operator inline. Strictly greater than, so a
+            // row is never fetched twice, and the cursor is only moved once a
+            // page has been written.
+            query["updated_at"] = "gt.\(Self.timestampFormatter.string(from: since))"
+        }
+
+        return try await get(view, query: query)
     }
 
     func get<T: Decodable & Sendable>(_ view: String, query: [String: String]) async throws -> [T] {
@@ -175,6 +207,38 @@ struct CountryDTO: Decodable, Sendable {
     let cameraCount: Int
     let zoneCount: Int
     let lastSyncedAt: Date?
+
+    // Speed limits carry their own version line so a phone does not re-check
+    // tens of megabytes because a camera moved. Optional so a build talking to
+    // a project that has not applied the road-limit migration still decodes.
+    let roadLimitVersion: Int?
+    let roadLimitCount: Int?
+    let roadLimitsSyncedAt: Date?
+}
+
+struct RoadLimitDTO: Decodable, Sendable {
+    let id: String
+    let countryCode: String
+    let name: String?
+    let roadRef: String?
+    let limitKph: Double
+    let forwardLimitKph: Double?
+    let backwardLimitKph: Double?
+    let verified: Bool
+    let path: GeoJSONLineString?
+    let updatedAt: Date
+
+    /// The polyline as `[latitude, longitude]` pairs.
+    ///
+    /// GeoJSON is `[longitude, latitude]` and everything else in this codebase
+    /// is the other way round, which is the first thing to check if a limit ever
+    /// matches a road in the wrong hemisphere.
+    var coordinates: [Coordinate] {
+        guard let path else { return [] }
+        return path.coordinates
+            .filter { $0.count >= 2 }
+            .map { Coordinate(latitude: $0[1], longitude: $0[0]) }
+    }
 }
 
 struct CameraDTO: Decodable, Sendable {

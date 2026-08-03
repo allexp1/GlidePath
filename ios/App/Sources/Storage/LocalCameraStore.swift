@@ -82,6 +82,37 @@ struct LocalCameraStore: CameraDataStore {
         return Zone(row: row, restStops: stops[id] ?? [])
     }
 
+    /// Speed limits for the roads immediately around the driver.
+    ///
+    /// By grid cell rather than by bounding box - see RoadLimitGrid for why the
+    /// query the cameras use does not survive a table this size. The radius
+    /// wants to stay small: this runs on every fix, and a wide one pulls in
+    /// every side street for the matcher to project against for nothing.
+    func roadLimits(near coordinate: Coordinate, radiusMeters: Double) async throws -> [RoadLimit] {
+        let cells = RoadLimitGrid.cells(around: coordinate, radiusMeters: radiusMeters)
+        guard !cells.isEmpty else { return [] }
+
+        let placeholders = databaseQuestionMarks(count: cells.count)
+        let rows = try await database.pool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM road_limit WHERE cell IN (\(placeholders))",
+                arguments: StatementArguments(cells)
+            )
+        }
+
+        return rows.compactMap { row -> RoadLimit? in
+            guard let limit = RoadLimit(row: row) else { return nil }
+            // The cell ring is deliberately generous, so most of what comes back
+            // is out of range. Projecting is the expensive part, so cull on the
+            // cheap great-circle distance to the nearest stored point first.
+            guard limit.path.coordinates.contains(where: {
+                coordinate.distance(to: $0) <= radiusMeters + RoadLimitGrid.maximumChunkMeters
+            }) else { return nil }
+            return limit
+        }
+    }
+
     // MARK: - History
 
     func record(_ outcome: ZoneOutcome, zoneName: String?) async throws {
@@ -230,6 +261,29 @@ extension Zone {
             directionDegrees: row["direction_degrees"] as Double?,
             path: RoadPath(pathJSON: row["path_json"] as String?),
             restStops: restStops,
+            updatedAt: row["updated_at"] as Date? ?? Date(timeIntervalSince1970: 0)
+        )
+    }
+}
+
+extension RoadLimit {
+    init?(row: Row) {
+        guard let id = row["id"] as String?,
+              let countryCode = row["country_code"] as String?,
+              let limitKph = row["limit_kph"] as Double?,
+              let path = RoadPath(pathJSON: row["path_json"] as String?) else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            countryCode: countryCode,
+            name: row["name"] as String?,
+            roadRef: row["road_ref"] as String?,
+            path: path,
+            limitKph: limitKph,
+            forwardLimitKph: row["forward_limit_kph"] as Double?,
+            backwardLimitKph: row["backward_limit_kph"] as Double?,
             updatedAt: row["updated_at"] as Date? ?? Date(timeIntervalSince1970: 0)
         )
     }

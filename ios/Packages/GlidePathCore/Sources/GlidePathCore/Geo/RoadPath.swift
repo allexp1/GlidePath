@@ -117,6 +117,19 @@ public struct RoadPath: Sendable, Equatable, Codable {
         )
     }
 
+    /// The compass bearing of one segment, in degrees clockwise from true north.
+    ///
+    /// This is the direction the road runs at that point, which is what tells a
+    /// driver's course apart from a road that merely passes nearby: a junction
+    /// puts two roads within a few metres of each other, and only their headings
+    /// say which one the car is actually on.
+    ///
+    /// Returns nil for an index outside the path.
+    public func bearing(atSegment index: Int) -> Double? {
+        guard index >= 0, index < coordinates.count - 1 else { return nil }
+        return coordinates[index].bearing(to: coordinates[index + 1])
+    }
+
     /// The coordinate at `distance` metres along the path, interpolating within
     /// the segment it falls in. Used to place rest stops and to render progress.
     public func coordinate(atDistance distance: Double) -> Coordinate {

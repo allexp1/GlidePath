@@ -110,20 +110,12 @@ public struct CameraApproachMonitor: Sendable {
             }
             announced[camera.id] = urgency
 
-            var over: Double?
-            if let limit = camera.speedLimitKph,
-               camera.type.enforcesInstantaneousSpeed,
-               let speedKph = fix.speedKph,
-               speedKph > limit {
-                over = speedKph - limit
-            }
-
             results.append(
                 CameraApproach(
                     camera: camera,
                     distanceMeters: distance,
                     urgency: urgency,
-                    overLimitByKph: over
+                    overLimitByKph: overLimit(camera: camera, fix: fix)
                 )
             )
         }
@@ -131,8 +123,51 @@ public struct CameraApproachMonitor: Sendable {
         return results.sorted { $0.distanceMeters < $1.distanceMeters }
     }
 
+    /// Announces a camera because the driver has crossed its geofence, rather
+    /// than because a fix landed inside the computed window.
+    ///
+    /// The two paths have to share `announced` or the driver hears the same
+    /// camera twice, which is why this lives here rather than in the app layer
+    /// alongside the region callback. Returns nil when the camera has already
+    /// been spoken about on this pass, which is the common case: at a decent
+    /// fix rate the ordinary window almost always opens first, and this is the
+    /// backstop for when it did not.
+    ///
+    /// Reported as `.advance`, never `.imminent`. A geofence radius is fixed
+    /// while the window is a function of speed, so the crossing carries no
+    /// information about how much time is left - and claiming urgency the data
+    /// does not support is how an app teaches drivers to ignore it.
+    public mutating func announceGeofenceCrossing(
+        of camera: Camera,
+        at fix: LocationFix
+    ) -> CameraApproach? {
+        guard !camera.type.isZoneMarker else { return nil }
+        guard announced[camera.id] == nil else { return nil }
+        guard camera.facesTraffic(travellingOn: fix.courseDegrees) else { return nil }
+
+        announced[camera.id] = .advance
+
+        return CameraApproach(
+            camera: camera,
+            distanceMeters: fix.coordinate.distance(to: camera.coordinate),
+            urgency: .advance,
+            overLimitByKph: overLimit(camera: camera, fix: fix)
+        )
+    }
+
     public mutating func reset() {
         announced.removeAll()
+    }
+
+    /// How far over this camera's limit the driver is, when the camera enforces
+    /// one at the moment of passing. Nil for a camera that does not, and for a
+    /// driver who is not over it.
+    private func overLimit(camera: Camera, fix: LocationFix) -> Double? {
+        guard let limit = camera.speedLimitKph,
+              camera.type.enforcesInstantaneousSpeed,
+              let speedKph = fix.speedKph,
+              speedKph > limit else { return nil }
+        return speedKph - limit
     }
 
     private func clampLead(_ distance: Double) -> Double {

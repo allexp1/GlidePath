@@ -189,4 +189,34 @@ final class PhrasebookTests: XCTestCase {
             XCTAssertEqual(phrasebook.cameraApproach(approach), expected)
         }
     }
+
+    // MARK: - Posted speed limits
+
+    func testTheLimitIsSpokenBeforeTheExcess() {
+        let exceedance = SpeedLimitMonitor.Exceedance(limitKph: 90, speedKph: 102)
+        // The limit first: it is the fact the driver may not have. How far over
+        // they are is only the reason to act on it, and leading with it leaves
+        // them working out "over what" at the wrong moment.
+        XCTAssertEqual(phrasebook.speedLimitExceeded(exceedance), "Limit 90. You are 12 over.")
+    }
+
+    func testBothNumbersConvertTogetherInMiles() {
+        let imperial = Phrasebook(units: .imperial)
+        let exceedance = SpeedLimitMonitor.Exceedance(limitKph: 80, speedKph: 96)
+        // 80 km/h is 50 mph and the 16 km/h excess is 10 mph. A converted limit
+        // beside an unconverted excess would be a plausible-looking sentence
+        // that is simply wrong.
+        XCTAssertEqual(imperial.speedLimitExceeded(exceedance), "Limit 50. You are 10 over.")
+    }
+
+    func testTheLimitLineNeverMentionsACameraOrAFine() {
+        let exceedance = SpeedLimitMonitor.Exceedance(limitKph: 50, speedKph: 70)
+        let line = phrasebook.speedLimitExceeded(exceedance)
+        // The app has no evidence anything is enforcing this stretch, and
+        // inventing a consequence for a number it cannot source is how a safety
+        // aid turns into nagging.
+        for word in ["camera", "fine", "police", "caught"] {
+            XCTAssertFalse(line.lowercased().contains(word), "\(line) should not mention \(word)")
+        }
+    }
 }

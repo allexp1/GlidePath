@@ -128,6 +128,25 @@ public struct Phrasebook: Sendable {
         }
     }
 
+    // MARK: - Posted speed limits
+
+    /// Said when the driver has held a speed over the posted limit long enough
+    /// to mean it.
+    ///
+    /// Two sentences, one number each, and the limit comes first. The limit is
+    /// the fact the driver may not have; how far over they are is the reason to
+    /// act on it. Saying the excess first - "you are 12 over" - leaves them
+    /// working out over what, at exactly the moment they should be looking at
+    /// the road.
+    ///
+    /// No mention of a camera, and no threat. The app does not know whether
+    /// anything is enforcing this stretch, and inventing consequence for a
+    /// number it has no evidence about is how a safety aid turns into nagging.
+    public func speedLimitExceeded(_ exceedance: SpeedLimitMonitor.Exceedance) -> String {
+        "Limit \(speedPhrase(exceedance.limitKph))."
+            + " You are \(speedPhrase(exceedance.overByKph)) over."
+    }
+
     // MARK: - Vocabulary
 
     private func cameraNoun(for type: CameraType) -> String {

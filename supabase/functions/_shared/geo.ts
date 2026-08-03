@@ -193,3 +193,125 @@ export function projectOntoLine(line: LatLon[], target: LatLon): LineProjection 
 export function distanceAlong(line: LatLon[], target: LatLon): number | null {
   return projectOntoLine(line, target)?.along ?? null
 }
+
+/**
+ * Ramer-Douglas-Peucker, in metres.
+ *
+ * Road-limit geometry is the one dataset here big enough for its own size to be
+ * a design constraint: every drivable way in a country with a maxspeed tag runs
+ * to hundreds of thousands of ways. OSM digitises road centrelines at a fidelity
+ * that exists for rendering, and the phone only ever asks one question of this
+ * geometry - "am I on this road?" - which it answers with a 30 m corridor. Points
+ * that move the line by less than a few metres cannot change that answer, so
+ * carrying them costs download size and SQLite pages for nothing.
+ *
+ * The tolerance is deliberately well below the matching corridor. Simplifying at
+ * anything close to it would let a bend drift far enough to hand the driver the
+ * limit from the road they are not on.
+ */
+export function simplifyPolyline(points: LatLon[], toleranceMeters = 8): LatLon[] {
+  if (points.length <= 2) return [...points]
+
+  const keep = new Array<boolean>(points.length).fill(false)
+  keep[0] = true
+  keep[points.length - 1] = true
+
+  // Iterative rather than recursive: a long motorway way can run to tens of
+  // thousands of points, and the naive recursion blows the stack on the
+  // degenerate case of an almost-straight road.
+  const stack: [number, number][] = [[0, points.length - 1]]
+
+  while (stack.length > 0) {
+    const [first, last] = stack.pop() as [number, number]
+    if (last <= first + 1) continue
+
+    let worstIndex = -1
+    let worstDistance = 0
+
+    for (let i = first + 1; i < last; i++) {
+      const distance = perpendicularDistance(points[i], points[first], points[last])
+      if (distance > worstDistance) {
+        worstDistance = distance
+        worstIndex = i
+      }
+    }
+
+    if (worstIndex >= 0 && worstDistance > toleranceMeters) {
+      keep[worstIndex] = true
+      stack.push([first, worstIndex], [worstIndex, last])
+    }
+  }
+
+  return points.filter((_, index) => keep[index])
+}
+
+/** Distance in metres from `point` to the segment `start`-`end`. */
+function perpendicularDistance(point: LatLon, start: LatLon, end: LatLon): number {
+  // Local flat frame anchored at the segment start, scaled so a degree of
+  // longitude and a degree of latitude are the same length on the ground.
+  const scale = Math.cos(toRad(start.lat))
+  const ex = (end.lon - start.lon) * scale
+  const ey = end.lat - start.lat
+  const px = (point.lon - start.lon) * scale
+  const py = point.lat - start.lat
+
+  const lengthSquared = ex * ex + ey * ey
+  if (lengthSquared === 0) return distanceMeters(point, start)
+
+  const t = Math.max(0, Math.min(1, (px * ex + py * ey) / lengthSquared))
+  const nearest = {
+    lat: start.lat + ey * t,
+    lon: start.lon + (end.lon - start.lon) * t
+  }
+  return distanceMeters(point, nearest)
+}
+
+export interface BoundingBox {
+  minLat: number
+  minLon: number
+  maxLat: number
+  maxLon: number
+}
+
+/**
+ * Splits a bounding box into tiles no larger than `stepDegrees` on a side.
+ *
+ * Overpass cannot return a whole country's worth of way geometry in one answer:
+ * the response runs to hundreds of megabytes and the query times out long before
+ * it finishes assembling. Tiling turns one impossible request into a few hundred
+ * ordinary ones, each of which can be retried on its own.
+ *
+ * Row-major from the south-west corner, so a run that stops half way and resumes
+ * covers a contiguous area rather than a scatter, which makes a partial dataset
+ * obviously partial on a map instead of subtly moth-eaten.
+ */
+export function boundingBoxTiles(box: BoundingBox, stepDegrees = 0.25): BoundingBox[] {
+  const tiles: BoundingBox[] = []
+  const step = Math.max(stepDegrees, 0.01)
+
+  // Walk on integer counts rather than accumulating `lat += step`. Repeated
+  // float addition drifts, and over the ~40 steps a large country needs the
+  // drift is enough to leave a sliver of the north edge uncovered.
+  const rows = Math.ceil((box.maxLat - box.minLat) / step)
+  const columns = Math.ceil((box.maxLon - box.minLon) / step)
+
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      tiles.push({
+        minLat: box.minLat + row * step,
+        minLon: box.minLon + column * step,
+        maxLat: Math.min(box.minLat + (row + 1) * step, box.maxLat),
+        maxLon: Math.min(box.minLon + (column + 1) * step, box.maxLon)
+      })
+    }
+  }
+
+  return tiles
+}
+
+/** A stable name for a tile, used as a resume checkpoint key. */
+export function tileKey(tile: BoundingBox): string {
+  return [tile.minLat, tile.minLon, tile.maxLat, tile.maxLon]
+    .map((value) => value.toFixed(4))
+    .join(',')
+}

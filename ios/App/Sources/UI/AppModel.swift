@@ -69,6 +69,19 @@ final class AppModel {
             applySettings()
             startup = .ready
 
+            // Resume watching if that is what this phone was doing when it was
+            // last alive.
+            //
+            // Not a nicety. A monitored region relaunches a terminated app into
+            // the background, which is the whole reason the geofences exist -
+            // and without this the relaunched app comes up idle, ignores the
+            // crossing it was woken for, and stays silent for the rest of the
+            // drive. Nobody presses start again, because nobody knows it
+            // stopped.
+            if settings.isWatching {
+                monitor.start()
+            }
+
             // A failed catalogue refresh is not a failed launch. Whatever was
             // downloaded before still works, which is the entire point.
             await sync.syncInstalledCountries()
@@ -78,10 +91,12 @@ final class AppModel {
     }
 
     func startMonitoring() {
+        settings.isWatching = true
         monitor?.start()
     }
 
     func stopMonitoring() {
+        settings.isWatching = false
         monitor?.stop()
     }
 
@@ -103,8 +118,15 @@ struct AppSettings: Equatable {
     var announcePointCameras: Bool
     var announceMobileHotspots: Bool
     var announceRedLightCameras: Bool
+    var announceSpeedLimit: Bool
+    var showSpeedLimit: Bool
     var respectSilentSwitch: Bool
     var hasSeenOnboarding: Bool
+
+    /// Whether the driver had the app watching the road when it was last
+    /// alive. Restored on launch, so a background relaunch from a geofence
+    /// comes back watching rather than idle.
+    var isWatching: Bool
 
     init(defaults: UserDefaults) {
         units = DistanceUnits(rawValue: defaults.string(forKey: Keys.units) ?? "") ?? .metric
@@ -113,8 +135,11 @@ struct AppSettings: Equatable {
         announcePointCameras = defaults.object(forKey: Keys.announcePointCameras) as? Bool ?? true
         announceMobileHotspots = defaults.object(forKey: Keys.announceMobileHotspots) as? Bool ?? true
         announceRedLightCameras = defaults.object(forKey: Keys.announceRedLightCameras) as? Bool ?? true
+        announceSpeedLimit = defaults.object(forKey: Keys.announceSpeedLimit) as? Bool ?? true
+        showSpeedLimit = defaults.object(forKey: Keys.showSpeedLimit) as? Bool ?? true
         respectSilentSwitch = defaults.object(forKey: Keys.respectSilentSwitch) as? Bool ?? false
         hasSeenOnboarding = defaults.bool(forKey: Keys.hasSeenOnboarding)
+        isWatching = defaults.bool(forKey: Keys.isWatching)
     }
 
     func persist(to defaults: UserDefaults) {
@@ -124,8 +149,11 @@ struct AppSettings: Equatable {
         defaults.set(announcePointCameras, forKey: Keys.announcePointCameras)
         defaults.set(announceMobileHotspots, forKey: Keys.announceMobileHotspots)
         defaults.set(announceRedLightCameras, forKey: Keys.announceRedLightCameras)
+        defaults.set(announceSpeedLimit, forKey: Keys.announceSpeedLimit)
+        defaults.set(showSpeedLimit, forKey: Keys.showSpeedLimit)
         defaults.set(respectSilentSwitch, forKey: Keys.respectSilentSwitch)
         defaults.set(hasSeenOnboarding, forKey: Keys.hasSeenOnboarding)
+        defaults.set(isWatching, forKey: Keys.isWatching)
     }
 
     var driveSettings: DriveMonitor.Settings {
@@ -135,7 +163,9 @@ struct AppSettings: Equatable {
             announceZones: announceZones,
             announcePointCameras: announcePointCameras,
             announceMobileHotspots: announceMobileHotspots,
-            announceRedLightCameras: announceRedLightCameras
+            announceRedLightCameras: announceRedLightCameras,
+            announceSpeedLimit: announceSpeedLimit,
+            showSpeedLimit: showSpeedLimit
         )
     }
 
@@ -153,7 +183,10 @@ struct AppSettings: Equatable {
         static let announcePointCameras = "settings.announcePointCameras"
         static let announceMobileHotspots = "settings.announceMobileHotspots"
         static let announceRedLightCameras = "settings.announceRedLightCameras"
+        static let announceSpeedLimit = "settings.announceSpeedLimit"
+        static let showSpeedLimit = "settings.showSpeedLimit"
         static let respectSilentSwitch = "settings.respectSilentSwitch"
         static let hasSeenOnboarding = "settings.hasSeenOnboarding"
+        static let isWatching = "settings.isWatching"
     }
 }

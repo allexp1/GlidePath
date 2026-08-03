@@ -41,8 +41,27 @@ struct SettingsView: View {
                 Text("What to announce")
             } footer: {
                 Text(
-                    "Mobile camera spots are places police are known to park a van. "
-                        + "They are a warning that one might be there, not that one is."
+                    "Each of these can be silenced on its own. Mobile camera spots are "
+                        + "places police are known to park a van; they are a warning that "
+                        + "one might be there, not that one is."
+                )
+            }
+
+            Section {
+                Toggle("Show the limit on screen", isOn: $model.settings.showSpeedLimit)
+                Toggle("Say when I am over it", isOn: $model.settings.announceSpeedLimit)
+                    .disabled(!model.settings.showSpeedLimit)
+                LabeledContent("Limits downloaded", value: limitSummary)
+            } header: {
+                Text("Road speed limit")
+            } footer: {
+                Text(
+                    "The limit for the road you are on, from OpenStreetMap. It is spoken "
+                        + "only after you have held a speed over it for a few seconds, and "
+                        + "not more than once a minute. Roads nobody has tagged have no "
+                        + "limit and stay silent rather than being guessed at. Download "
+                        + "limits per country under Countries; they are much larger than "
+                        + "the camera data."
                 )
             }
 
@@ -61,8 +80,19 @@ struct SettingsView: View {
                     LabeledContent("Countries", value: downloadSummary)
                 }
                 LabeledContent("Location access", value: locationSummary)
+                LabeledContent("Position updates", value: trackingSummary)
             } header: {
                 Text("Data and permissions")
+            } footer: {
+                // "I heard nothing on my drive" has three possible causes -
+                // no permission, no fix stream, no data - and from the outside
+                // they are indistinguishable. This row separates them without
+                // anyone having to attach a debugger.
+                Text(
+                    "Position updates should show a rising count while you are watching "
+                        + "the road. If it stays at nothing, no warning can be timed and "
+                        + "the problem is location access rather than the alerts."
+                )
             }
 
             Section {
@@ -87,6 +117,25 @@ struct SettingsView: View {
         case 0: return "None downloaded"
         case 1: return installed[0].name
         default: return "\(installed.count) downloaded"
+        }
+    }
+
+    /// How many countries this phone holds speed limits for.
+    private var limitSummary: String {
+        let installed = model.sync?.countries.filter(\.roadLimitsInstalled) ?? []
+        switch installed.count {
+        case 0: return "None"
+        case 1: return installed[0].name
+        default: return "\(installed.count) countries"
+        }
+    }
+
+    private var trackingSummary: String {
+        let count = model.location.fixCount
+        switch model.location.mode {
+        case .off: return "Not watching"
+        case .drive: return "\(count) received"
+        case .precise: return "\(count) received, in a zone"
         }
     }
 

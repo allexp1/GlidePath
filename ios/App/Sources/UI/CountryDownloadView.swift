@@ -123,7 +123,7 @@ struct CountryDownloadView: View {
     ) -> some View {
         if !countries.isEmpty {
             Section(title) {
-                ForEach(countries) { row(for: $0) }
+                ForEach(countries) { rows(for: $0) }
             }
         } else if let emptyHint {
             Section(title) {
@@ -133,6 +133,91 @@ struct CountryDownloadView: View {
     }
 
     // MARK: - Rows
+
+    /// A country, plus its speed limits as a second row when there are any.
+    ///
+    /// Two rows rather than one combined download. The limit dataset is two
+    /// orders of magnitude larger than the camera data, and rolling them
+    /// together would mean a driver who wants camera warnings has to take
+    /// hundreds of megabytes of road network to get them.
+    @ViewBuilder
+    private func rows(for country: CountrySyncService.CountryStatus) -> some View {
+        row(for: country)
+
+        if country.isInstalled, country.hasRoadLimits {
+            limitRow(for: country)
+        }
+    }
+
+    private func limitRow(for country: CountrySyncService.CountryStatus) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "speedometer")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 34)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Speed limits")
+                    .font(.subheadline)
+                Text(limitDetail(for: country))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            limitAction(for: country)
+        }
+        .padding(.vertical, 3)
+        .padding(.leading, 12)
+        .swipeActions {
+            if country.roadLimitsInstalled {
+                Button("Remove", role: .destructive) {
+                    Task { await sync?.removeRoadLimits(country.code) }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(country.name) speed limits. \(limitDetail(for: country))")
+    }
+
+    private func limitDetail(for country: CountrySyncService.CountryStatus) -> String {
+        if case let .downloadingLimits(code, fraction) = sync?.progress, code == country.code {
+            return "Downloading, \(Int(fraction * 100))%"
+        }
+
+        var parts = ["\(country.roadLimitCount.formatted()) roads"]
+        parts.append(size(country.estimatedRoadLimitBytes))
+
+        if country.roadLimitsHaveUpdate {
+            parts.append("update available")
+        } else if country.roadLimitsInstalled {
+            parts.append("installed")
+        } else {
+            // The one download in the app worth warning about before it starts.
+            parts.append("Wi-Fi recommended")
+        }
+
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func limitAction(for country: CountrySyncService.CountryStatus) -> some View {
+        if case let .downloadingLimits(code, _) = sync?.progress, code == country.code {
+            ProgressView()
+        } else if country.roadLimitsHaveUpdate {
+            Button("Update") { Task { await sync?.syncRoadLimits(country.code) } }
+                .buttonStyle(.glass)
+        } else if country.roadLimitsInstalled {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .accessibilityLabel("Installed")
+        } else {
+            Button("Get") { Task { await sync?.downloadRoadLimits(country.code) } }
+                .buttonStyle(.glass)
+        }
+    }
 
     private func row(for country: CountrySyncService.CountryStatus) -> some View {
         HStack(spacing: 12) {

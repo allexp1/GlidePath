@@ -133,7 +133,7 @@ jobs:
 
       - name: Type check the seed CLI
         working-directory: supabase/seed
-        run: deno check seed.ts inspect.ts
+        run: deno check seed.ts inspect.ts seed_limits.ts
 
       # Lint is syntactic and resolves no imports, so one pass from the root
       # covers both.
@@ -343,11 +343,13 @@ jobs:
             fi
           }
 
-          # These pairs must match the fetchAll calls in CountrySyncService.
+          # These pairs must match the fetchAll and fetchPage calls in
+          # CountrySyncService.
           check countries_public code
           check cameras_public id
           check zones_public id
           check rest_stops_public id
+          check road_limits_public id
 
           exit $failed
 
@@ -411,6 +413,82 @@ jobs:
             \$\$;
           "
           echo "A wholly empty harvest is refused; a single removal still lands."
+
+      # A road-limit harvest is a few hundred tiled Overpass queries and stopping
+      # after 200 of them is an ordinary outcome. Every way in the tiles that
+      # were never fetched looks exactly like a way that has been deleted, so a
+      # partial run must not be allowed to retire anything.
+      - name: A partial limit harvest must not retire the tiles it never fetched
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            declare
+              v_faded int;
+              v_error text;
+              v_run timestamptz := now();
+            begin
+              -- Two hundred limits, all last seen before this run: what the
+              -- unfetched half of a country looks like to the finish function.
+              insert into public.road_limits
+                (country_code, highway, polyline, limit_kph, osm_id, source, verified, last_seen_at)
+              select 'IL',
+                     'primary',
+                     extensions.st_setsrid(
+                       extensions.st_makeline(
+                         extensions.st_makepoint(34.8 + i * 0.001, 32.1),
+                         extensions.st_makepoint(34.8 + i * 0.001, 32.11)
+                       ), 4326),
+                     90,
+                     'test/limits/' || i,
+                     'osm',
+                     true,
+                     v_run - interval '1 day'
+                from generate_series(1, 200) as i;
+
+              -- p_complete false: the run knows it did not cover the country.
+              perform public.finish_road_limit_sync('IL', v_run, false, null);
+
+              select count(*) into v_faded
+                from public.road_limits where osm_id like 'test/limits/%' and not verified;
+              if v_faded > 0 then
+                raise exception 'a partial harvest retired % limits', v_faded;
+              end if;
+
+              select road_limits_sync_error into v_error from public.countries where code = 'IL';
+              if v_error is null or v_error not like '%partial%' then
+                raise exception 'the partial run was not recorded: %', coalesce(v_error, 'null');
+              end if;
+
+              -- A complete run that saw nothing is still a failed harvest, and
+              -- the more-than-half guard is what catches it.
+              perform public.finish_road_limit_sync('IL', v_run, true, null);
+
+              select count(*) into v_faded
+                from public.road_limits where osm_id like 'test/limits/%' and not verified;
+              if v_faded > 0 then
+                raise exception 'a wholly empty complete harvest retired % limits', v_faded;
+              end if;
+
+              -- One road losing its maxspeed tag is an ordinary mapping change
+              -- and must still be acted on.
+              update public.road_limits set last_seen_at = v_run
+               where osm_id like 'test/limits/%' and osm_id <> 'test/limits/1';
+
+              perform public.finish_road_limit_sync('IL', v_run, true, null);
+
+              select count(*) into v_faded
+                from public.road_limits where osm_id like 'test/limits/%' and not verified;
+              if v_faded <> 1 then
+                raise exception 'expected exactly the one retagged road to retire, got %', v_faded;
+              end if;
+
+              delete from public.road_limits where osm_id like 'test/limits/%';
+              update public.countries
+                 set road_limit_count = 0, road_limits_sync_error = null where code = 'IL';
+            end
+            \$\$;
+          "
+          echo "Partial and empty limit harvests retire nothing; a single removal still lands."
 
       - name: Every public table must have row level security on
         run: |

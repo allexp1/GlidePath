@@ -82,18 +82,30 @@ that they would be a hole straight through the policies.
 
 ## Data flow while driving
 
-1. **Standby.** Significant-location changes plus up to 20 monitored regions.
-   Costs almost nothing.
+0. **Not watching.** Nothing is monitored and nothing is running. Whether the
+   driver had it watching is persisted, so a relaunch resumes rather than coming
+   up idle.
+1. **Watching: drive mode.** Continuous updates whose accuracy and distance
+   filter scale with the distance to the nearest camera or zone — coarse beyond
+   6 km, sharpening inside 1.5 km — plus up to 20 monitored regions and
+   significant-location changes underneath, which are what relaunch a terminated
+   app. Significant-location changes are *not* enough on their own: a camera
+   warning is computed per fix against a window at most 900 m wide, and they
+   cannot land inside one reliably. Point cameras are announced off the
+   continuous stream, with the camera geofence wired up as a backstop for the
+   warning it missed. The posted-limit matcher runs here too.
 2. **A zone geofence fires**, several hundred metres before the entry camera.
    Precise tracking switches on so the receiver has time to lock and settle.
 3. **The entry line is crossed.** The crossing time is interpolated between the
    last fix before and the first after, never taken from the wake-up.
 4. **Coaching.** Each fix is projected onto the zone polyline for distance
    travelled; the allowance is recomputed; the tier is chosen; the announcer
-   decides whether it is worth saying out loud.
+   decides whether it is worth saying out loud. The posted-limit alert goes
+   silent for the duration: the coaching engine owns the voice inside a zone.
 5. **The exit line is crossed**, timestamped the same careful way. The outcome
    is spoken and written to local history.
-6. **Back to standby.**
+6. **Back to drive mode.** Leaving a zone does not mean the driver has stopped
+   driving, and the point cameras after it need the same fix stream the zone did.
 
 If the driver diverges from the zone's road for five continuous seconds, the
 session is cancelled instead. One bad fix under a bridge does nothing.

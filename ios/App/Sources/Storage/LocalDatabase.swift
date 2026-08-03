@@ -154,11 +154,69 @@ final class LocalDatabase: @unchecked Sendable {
             }
         }
 
+        // Posted speed limits for ordinary roads.
+        //
+        // This table is three orders of magnitude larger than everything above
+        // it - a country is hundreds of thousands of rows, not hundreds - and
+        // that changes how it has to be queried. The bounding-box scan the
+        // cameras use is fine over a few thousand rows and hopeless here: it
+        // reads every row in a band of latitude across the whole country.
+        //
+        // So limits are indexed by grid cell instead. Each row carries the cell
+        // its midpoint falls in, a lookup asks for the nine cells around the
+        // driver, and SQLite answers from the index without touching anything
+        // else. Long ways are cut into chunks on the way in so that a row is
+        // always small enough for its midpoint to represent it - see
+        // RoadLimitChunk.
+        migrator.registerMigration("v3_road_limits") { db in
+            try db.create(table: "road_limit") { table in
+                // "<server row id>#<chunk index>". Chunking happens on the
+                // phone, so one server row becomes several of these.
+                table.primaryKey("id", .text)
+
+                // The server row this chunk came from. A way that is re-traced
+                // upstream changes its point count, so an update replaces every
+                // chunk rather than trying to match them up.
+                table.column("way_id", .text).notNull().indexed()
+
+                table.column("country_code", .text).notNull().indexed()
+                table.column("cell", .text).notNull()
+
+                // The polyline, as a JSON array of [lat, lon] pairs, same
+                // encoding as zone.path_json.
+                table.column("path_json", .text).notNull()
+
+                table.column("limit_kph", .double).notNull()
+                table.column("forward_limit_kph", .double)
+                table.column("backward_limit_kph", .double)
+                table.column("name", .text)
+                table.column("road_ref", .text)
+                table.column("updated_at", .datetime).notNull()
+            }
+
+            try db.create(index: "road_limit_cell", on: "road_limit", columns: ["cell"])
+
+            // Limits are downloaded per country, separately from cameras and
+            // with their own version line, so they need their own high-water
+            // mark rather than a row in sync_cursor.
+            try db.alter(table: "country") { table in
+                table.add(column: "road_limit_version", .integer).notNull().defaults(to: 0)
+                table.add(column: "road_limit_count", .integer).notNull().defaults(to: 0)
+                table.add(column: "road_limits_installed_version", .integer)
+                table.add(column: "road_limits_installed_at", .datetime)
+                table.add(column: "road_limits_cursor", .datetime)
+            }
+        }
+
         return migrator
     }
 
-    /// Throws the country away. Used by the version fallback when a delta can
-    /// no longer be trusted, and by the user removing a download.
+    /// Throws the country's camera data away. Used by the version fallback when
+    /// a delta can no longer be trusted, and by the user removing a download.
+    ///
+    /// Leaves road limits alone: they are a separate download with their own
+    /// version line, and re-fetching tens of megabytes because a camera moved is
+    /// exactly what keeping them separate was for.
     func erase(country code: String) async throws {
         try await pool.write { db in
             try db.execute(sql: "DELETE FROM camera WHERE country_code = ?", arguments: [code])
@@ -167,6 +225,31 @@ final class LocalDatabase: @unchecked Sendable {
             try db.execute(sql: "DELETE FROM sync_cursor WHERE country_code = ?", arguments: [code])
             try db.execute(
                 sql: "UPDATE country SET installed_version = NULL, installed_at = NULL WHERE code = ?",
+                arguments: [code]
+            )
+        }
+    }
+
+    /// Throws the country's speed limits away, which is the larger half of a
+    /// download and the one a driver short of space will want back first.
+    ///
+    /// The freed pages stay in the database file rather than being handed back
+    /// to the filesystem. SQLite reuses them, so the file stops growing rather
+    /// than shrinking, and a driver who removed a country to save space will not
+    /// see the space appear until they download something else. Vacuuming would
+    /// fix that and would rewrite the entire file to do it, which is the wrong
+    /// thing to start doing to a phone that is short of room.
+    func eraseRoadLimits(country code: String) async throws {
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM road_limit WHERE country_code = ?", arguments: [code])
+            try db.execute(
+                sql: """
+                    UPDATE country
+                       SET road_limits_installed_version = NULL,
+                           road_limits_installed_at = NULL,
+                           road_limits_cursor = NULL
+                     WHERE code = ?
+                    """,
                 arguments: [code]
             )
         }

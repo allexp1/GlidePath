@@ -18,6 +18,7 @@ import {
   distanceAlong,
   distanceMeters,
   polylineLength,
+  simplifyPolyline,
   stitchWays
 } from './geo.ts'
 import type { LatLon } from './geo.ts'
@@ -66,6 +67,22 @@ export interface RestStopRow {
   latitude: number
   longitude: number
   kind: 'rest_area' | 'fuel_station' | 'services' | 'parking' | 'viewpoint'
+}
+
+/** A stretch of road with a posted limit on it. */
+export interface RoadLimitRow {
+  osm_id: string
+  country_code: string
+  name: string | null
+  road_ref: string | null
+  highway: string
+  /** The limit to use when the direction of travel cannot be established. */
+  limit_kph: number
+  /** Limit for travel along the stored geometry, when the two differ. */
+  forward_limit_kph: number | null
+  /** Limit for travel against the stored geometry, when the two differ. */
+  backward_limit_kph: number | null
+  path: LatLon[]
 }
 
 // ---------------------------------------------------------------------------
@@ -479,4 +496,86 @@ export function translateRestStop(
     longitude: lon,
     kind
   }
+}
+
+// ---------------------------------------------------------------------------
+// Road speed limits
+// ---------------------------------------------------------------------------
+
+/**
+ * Shorter than this and there is nothing to match against.
+ *
+ * A 12 m stub between two junctions cannot be told apart from the roads either
+ * side of it by a receiver with 5 m of error, and matching onto one would hand
+ * the driver a limit that belongs to a few car lengths of tarmac.
+ */
+export const MINIMUM_ROAD_LIMIT_LENGTH_METERS = 25
+
+/**
+ * One drivable way with a posted limit.
+ *
+ * The rule this follows is the same one the rest of the file follows for
+ * cameras, pointed the other way: **never state a limit that was not read off
+ * the data.** `maxspeed` is free text and a large slice of it - "LT:urban",
+ * "none", "walk", "signals" - carries no number. Those ways are dropped rather
+ * than resolved against a table of national defaults, because a limit spoken
+ * aloud is a claim about a sign the driver can see, and being confidently wrong
+ * about it is worse than saying nothing. The app is silent on a road it has no
+ * limit for, which is the honest answer.
+ */
+export function translateRoadLimit(
+  element: OverpassElement,
+  countryCode: string,
+  toleranceMeters = 8
+): RoadLimitRow | null {
+  if (element.type !== 'way') return null
+
+  const geometry = element.geometry
+  if (!Array.isArray(geometry) || geometry.length < 2) return null
+
+  const tags = element.tags ?? {}
+  const highway = tags.highway
+  if (!highway) return null
+
+  const base = parseMaxspeed(tags.maxspeed)
+  const forward = parseMaxspeed(tags['maxspeed:forward'])
+  const backward = parseMaxspeed(tags['maxspeed:backward'])
+
+  // A one-way road has no "against the geometry" direction, so a
+  // maxspeed:backward on one is either leftover tagging or refers to something
+  // other than motor traffic. Dropping it stops the matcher offering a limit
+  // for a direction nobody can legally drive.
+  const oneway = (tags.oneway ?? '').toLowerCase()
+  const isOneway = oneway === 'yes' || oneway === '1' || oneway === '-1'
+
+  // The fallback when the direction of travel is unknown. The *higher* of the
+  // two, deliberately: an unnecessary silence is a smaller failure than a
+  // warning that is wrong, and the app only ever falls back here when it could
+  // not work out which way the driver is going.
+  const fallback = base ?? maxOf(forward, isOneway ? null : backward)
+  if (fallback === null) return null
+
+  const path = simplifyPolyline(geometry, toleranceMeters)
+  if (path.length < 2) return null
+  if (polylineLength(path) < MINIMUM_ROAD_LIMIT_LENGTH_METERS) return null
+
+  return {
+    osm_id: `way/${element.id}`,
+    country_code: countryCode,
+    name: tags.name ?? null,
+    road_ref: tags.ref ?? null,
+    highway,
+    limit_kph: fallback,
+    // Only stored when they actually say something the base tag does not.
+    forward_limit_kph: forward !== null && forward !== fallback ? forward : null,
+    backward_limit_kph:
+      !isOneway && backward !== null && backward !== fallback ? backward : null,
+    path
+  }
+}
+
+function maxOf(a: number | null, b: number | null): number | null {
+  if (a === null) return b
+  if (b === null) return a
+  return Math.max(a, b)
 }

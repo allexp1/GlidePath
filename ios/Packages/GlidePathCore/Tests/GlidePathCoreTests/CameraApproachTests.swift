@@ -125,6 +125,65 @@ final class CameraApproachTests: XCTestCase {
         XCTAssertEqual(approaches.first?.urgency, .advance)
     }
 
+    // MARK: - The geofence backstop
+
+    /// The camera geofence exists so a warning still happens when the fix stream
+    /// did not manage one: a cold start, a tunnel, a receiver that had not
+    /// settled. Before this path existed the region fired and was discarded, and
+    /// the app was silent for a whole drive.
+    func testAGeofenceCrossingAnnouncesACameraTheFixStreamMissed() {
+        var monitor = CameraApproachMonitor()
+        let approach = monitor.announceGeofenceCrossing(of: camera(), at: fix(metresAway: 350))
+
+        XCTAssertEqual(approach?.camera.id, "cam")
+        XCTAssertEqual(approach?.urgency, .advance)
+    }
+
+    /// A geofence radius is fixed while the warning window is a function of
+    /// speed, so a crossing says nothing about how much time is left. Claiming
+    /// urgency the data does not support is how an app teaches drivers to ignore
+    /// it.
+    func testAGeofenceCrossingIsNeverReportedAsImminent() {
+        var monitor = CameraApproachMonitor()
+        let crawling = fix(metresAway: 350, speedKph: 5)
+        XCTAssertEqual(monitor.announceGeofenceCrossing(of: camera(), at: crawling)?.urgency, .advance)
+    }
+
+    func testAGeofenceCrossingDoesNotRepeatWhatWasAlreadySaid() {
+        var monitor = CameraApproachMonitor()
+        let target = camera()
+
+        XCTAssertFalse(monitor.update(fix: fix(metresAway: 700), cameras: [target]).isEmpty)
+        XCTAssertNil(
+            monitor.announceGeofenceCrossing(of: target, at: fix(metresAway: 350)),
+            "the ordinary window already spoke; the backstop must stay quiet"
+        )
+    }
+
+    func testTheOrdinaryWindowDoesNotRepeatWhatTheGeofenceSaid() {
+        var monitor = CameraApproachMonitor()
+        let target = camera()
+
+        XCTAssertNotNil(monitor.announceGeofenceCrossing(of: target, at: fix(metresAway: 350)))
+        XCTAssertTrue(
+            monitor.update(fix: fix(metresAway: 300), cameras: [target]).isEmpty,
+            "both paths share the announced set, so neither doubles up on the other"
+        )
+    }
+
+    func testAGeofenceCrossingRespectsTheCameraDirection() {
+        var monitor = CameraApproachMonitor()
+        let westbound = camera(direction: 270)
+        XCTAssertNil(monitor.announceGeofenceCrossing(of: westbound, at: fix(metresAway: 350)))
+    }
+
+    func testAGeofenceCrossingLeavesZoneMarkersAlone() {
+        var monitor = CameraApproachMonitor()
+        XCTAssertNil(
+            monitor.announceGeofenceCrossing(of: camera(type: .zoneEntry), at: fix(metresAway: 350))
+        )
+    }
+
     func testResultsComeBackNearestFirst() {
         var monitor = CameraApproachMonitor()
         let near = Camera(

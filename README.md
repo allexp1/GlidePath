@@ -161,6 +161,54 @@ silently. The set is a window that moves with the driver, and zone entries are
 seeded before point cameras: a missed point camera costs one fine, a missed zone
 entry costs the whole feature.
 
+### The fix stream has to match the warning window
+
+A camera warning is computed per GPS fix against a window at most 900 metres
+wide. Significant-location changes arrive every 500 metres at best and often only
+every few kilometres. Those two numbers are an order of magnitude apart, so a fix
+almost never lands inside the window — and an app whose only fix stream is
+significant-location changes stays silent for an entire drive while appearing to
+work perfectly.
+
+So watching the road means continuous updates. **Drive** mode scales its
+accuracy and distance filter with how far away the nearest camera is — coarse
+beyond 6 km, sharpening inside 1.5 km, so the receiver is awake and settled
+before the window opens rather than during it. **Precise** is best-for-navigation
+with no filter, for the duration of a zone. Significant-location changes run
+underneath both: they cost nothing extra while continuous updates are already
+going, and they are what brings the app back if iOS terminates it.
+
+Which only helps if the relaunched app resumes watching, so whether the driver
+had it running is persisted and restored on launch. Without that, a region
+crossing wakes the app, the app comes up idle, and it stays silent for the rest
+of the drive — and nobody presses start again, because nobody knows it stopped.
+
+The camera geofences are wired to an announcement as a backstop, for the warning
+the fix stream did not manage: a cold start, a tunnel, a receiver that had not
+settled. It reports `advance` and never `imminent`, because a geofence radius is
+fixed while the window is a function of speed, so a crossing carries no
+information about how much time is left. Both paths share one announced-set, so
+neither doubles up on the other.
+
+### The posted limit on the road you are on
+
+Separate from all of the above, and separate again from enforcement: the limit on
+the sign, matched to the road under the car, shown as a roundel and spoken only
+once it has been exceeded by a real margin for several seconds. Both halves mute
+independently in Settings, as does every category of camera warning.
+
+The rule it lives by is the mirror of the camera rule. A camera warning says
+*there is a thing here*, and being wrong is an irritation. A limit says *the sign
+says 90*, which a driver may act on without having seen the sign — so a limit is
+only ever stated when it was read off an explicit `maxspeed` tag. Nothing is
+inferred from a national default, and a road nobody has tagged stays silent.
+
+It is a separate per-country download, because it is two orders of magnitude
+larger than the camera data, and it is harvested by a command you run rather than
+by the nightly job, because a national road network takes far longer than an Edge
+Function is allowed to live. [docs/SPEED_LIMITS.md](docs/SPEED_LIMITS.md) has the
+rest: why nearest-polyline is the wrong match, and what buys the silence.
+
 ---
 
 ## Layout
@@ -174,7 +222,7 @@ supabase/
   migrations/                    PostGIS schema, RLS, sync functions, the nightly schedule
   functions/sync-cameras/        the nightly Overpass job
   functions/_shared/             translation code, shared verbatim with the seed CLI
-  seed/                          the seed CLI and israel_zones.json
+  seed/                          the seed CLI, the limit harvester, israel_zones.json
 docs/
 scripts/
 ```
@@ -277,6 +325,23 @@ Israel's new average-speed sections are entered by hand in
 months after enforcement starts. **That file ships empty on purpose** — see
 [docs/ISRAEL_ZONES.md](docs/ISRAEL_ZONES.md) for the format and for why
 inventing plausible coordinates would be worse than having none.
+
+### Posted speed limits are a second, much larger dataset
+
+Camera data is a few hundred rows per country. Every drivable way with an
+explicit `maxspeed` tag is a few hundred *thousand*, and that size decides
+everything about how it is handled: harvested by `make seed-limits CODE=LT`
+rather than by the nightly job, downloaded per country as its own opt-in with its
+own version line, geometry simplified to 8 m before it is stored, and indexed on
+the phone by grid cell rather than by bounding box.
+
+```bash
+make seed-limits CODE=LT      # tens of minutes, resumable, ctrl-C is safe
+```
+
+Roads tagged with an implicit limit — `LT:urban`, `none`, `walk` — are dropped
+rather than resolved against a table of national defaults. See
+[docs/SPEED_LIMITS.md](docs/SPEED_LIMITS.md).
 
 ### Countries
 
