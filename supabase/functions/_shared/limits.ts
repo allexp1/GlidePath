@@ -7,17 +7,27 @@
  * the road network of an entire country, and on anything the size of Poland it
  * runs for the better part of an hour.
  *
- * That length is why this does not run on the nightly schedule. A Supabase Edge
+ * That length is why this is not on the nightly schedule. A Supabase Edge
  * Function is killed long before a national harvest finishes, so a scheduled
  * road-limit job would fail every night in exactly the way that looks like it
- * is working - partial data, no error, a country quietly half covered. It is a
- * seed-CLI job instead, run on demand from a machine with no wall clock on it,
- * which is the same pattern `make seed-country` already uses for loading a
- * country nobody has surveyed yet.
+ * is working - partial data, no error, a country quietly half covered.
  *
  * Resumability is the other consequence. The caller supplies the set of tiles
  * already done and is told after each one, so a run interrupted at tile 214
  * restarts at tile 215 rather than at the border.
+ *
+ * That resumability is also what makes the length survivable somewhere with a
+ * wall clock. A run does not have to finish in one process: given `maxTiles` or
+ * a `shouldStop` deadline it does as much as it can and reports where it got to,
+ * and the next call carries on. The seed CLI drives it as one long local run;
+ * the sync-limits Edge Function drives the same code as many short ones, which
+ * is what lets a country be harvested by anyone who can call the function
+ * rather than only from a laptop with the CLI installed.
+ *
+ * Chunking has one hard requirement, and it is the reason `runStartedAt` and
+ * `finalize` exist. `finish_road_limit_sync` retires ways last seen before the
+ * run began, so every chunk of one logical run must pass the same start time,
+ * and only the chunk that completes the country may finalise.
  */
 
 import { boundingBoxTiles, lineStringWKT, tileKey } from './geo.ts'
@@ -53,6 +63,36 @@ export interface RoadLimitSyncOptions {
 
   /** Stop after this many tiles in this invocation. Unlimited when unset. */
   maxTiles?: number
+
+  /**
+   * Checked before each tile; stop cleanly when it returns true.
+   *
+   * A tile count is a poor proxy for time when tiles vary from an empty desert
+   * square to a capital city, which is exactly the spread inside one country.
+   * Somewhere with a wall clock wants a deadline instead, and stopping here
+   * leaves the run resumable in a way from being killed mid-request does not.
+   */
+  shouldStop?: () => boolean
+
+  /**
+   * The start of the logical run, when this call is continuing one.
+   *
+   * Defaults to now, which is right for a single-process run. A chunked run
+   * MUST pass the first chunk's value to every later chunk: retirement is
+   * "last seen before the run began", so per-chunk clocks would make each chunk
+   * retire what the one before it wrote.
+   */
+  runStartedAt?: string
+
+  /**
+   * Whether to close the run out by calling `finish_road_limit_sync`.
+   *
+   * Defaults to true. A chunked caller passes false and finalises itself once
+   * the country is actually covered, because that RPC bumps the version phones
+   * watch - doing it per chunk would order every phone to re-check a national
+   * dataset twenty times during one harvest.
+   */
+  finalize?: boolean
 }
 
 export interface RoadLimitSyncReport {
@@ -125,7 +165,7 @@ export async function syncRoadLimits(
 ): Promise<RoadLimitSyncReport> {
   const log = options.log ?? (() => {})
   const warnings: string[] = []
-  const runStartedAt = new Date().toISOString()
+  const runStartedAt = options.runStartedAt ?? new Date().toISOString()
   const completed = options.completedTiles ?? new Set<string>()
 
   log(`[${countryCode}] resolving the country boundary`)
@@ -162,6 +202,14 @@ export async function syncRoadLimits(
     }
 
     if (options.maxTiles !== undefined && fetched >= options.maxTiles) {
+      stoppedEarly = true
+      break
+    }
+
+    // Checked after the skip, so exhausting the budget on a run that is mostly
+    // already-done tiles cannot strand it: skipping is free and does not need
+    // to be paid for out of the deadline.
+    if (options.shouldStop?.() === true) {
       stoppedEarly = true
       break
     }
@@ -211,7 +259,15 @@ export async function syncRoadLimits(
 
   const complete = !stoppedEarly && failed === 0 && fetched + skipped === tiles.length
 
-  if (options.dryRun) {
+  // A chunked caller finalises for itself, so there is nothing left to do here
+  // and no version to report - the run is still open.
+  if (options.dryRun || options.finalize === false) {
+    if (!options.dryRun && !complete) {
+      warnings.push(
+        `chunk stopped at ${fetched + skipped}/${tiles.length} tiles; ` +
+          'the run is still open and the next call resumes from here'
+      )
+    }
     return {
       countryCode,
       tilesTotal: tiles.length,

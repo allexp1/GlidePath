@@ -4,6 +4,8 @@ import type { BoundingBox, LatLon } from './geo.ts'
 import { DRIVABLE_HIGHWAY_VALUES, roadLimitQuery } from './overpass.ts'
 import type { OverpassElement } from './overpass.ts'
 import { translateRoadLimit } from './translate.ts'
+import { syncRoadLimits } from './limits.ts'
+import type { DatabaseClient } from './sync.ts'
 
 // Lithuania, where this was tested.
 const LAT = 54.5
@@ -219,4 +221,172 @@ Deno.test('boundingBoxTiles leaves no gap between tiles', () => {
 Deno.test('tileKey is unique per tile', () => {
   const tiles = boundingBoxTiles(lithuania, 0.25)
   assertEquals(new Set(tiles.map(tileKey)).size, tiles.length)
+})
+
+// ---------------------------------------------------------------------------
+// Harvesting in chunks
+// ---------------------------------------------------------------------------
+//
+// The sync-limits Edge Function runs the harvest as many short calls instead of
+// one long one, and the three options that make that possible are the three
+// easiest things here to get subtly wrong. Each of these guards a failure that
+// produces a plausible-looking dataset rather than an error.
+
+/** Records what was written, so a test can assert on it. */
+function fakeClient() {
+  const upserted: Record<string, unknown>[] = []
+  const rpcCalls: { fn: string; args: Record<string, unknown> }[] = []
+
+  const client = {
+    from: (_table: string) => ({
+      upsert: (rows: unknown[]) => ({
+        select: () => {
+          upserted.push(...(rows as Record<string, unknown>[]))
+          return Promise.resolve({ data: [], error: null })
+        }
+      }),
+      delete: () => ({ in: () => Promise.resolve({ error: null }) }),
+      insert: () => Promise.resolve({ error: null })
+    }),
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve({ data: 1, error: null })
+    }
+  }
+
+  return { client, upserted, rpcCalls }
+}
+
+/** Answers the bounds probe, then serves one tagged way per tile. */
+function fakeOverpass(box: BoundingBox) {
+  let tileRequests = 0
+
+  const fetchImpl = ((_url: string, init?: RequestInit) => {
+    const body = String((init?.body as URLSearchParams | undefined) ?? '')
+
+    if (body.includes('out bb')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            elements: [{
+              type: 'relation',
+              id: 1,
+              bounds: {
+                minlat: box.minLat,
+                minlon: box.minLon,
+                maxlat: box.maxLat,
+                maxlon: box.maxLon
+              }
+            }]
+          }),
+          { status: 200 }
+        )
+      )
+    }
+
+    // A distinct way per tile, so double-counting shows up as a wrong total.
+    tileRequests++
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          elements: [{
+            type: 'way',
+            id: 1000 + tileRequests,
+            tags: { highway: 'primary', maxspeed: '90' },
+            geometry: [point(24.0), point(24.02)]
+          }]
+        }),
+        { status: 200 }
+      )
+    )
+  }) as unknown as typeof fetch
+
+  return { fetchImpl, tileCount: () => tileRequests }
+}
+
+// A quarter-degree box, so exactly four tiles at the default step.
+const fourTiles: BoundingBox = { minLat: 54, minLon: 24, maxLat: 54.5, maxLon: 24.5 }
+
+Deno.test('a chunked run stops on the deadline and reports itself incomplete', async () => {
+  const { client, rpcCalls } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  let tilesSeen = 0
+  const report = await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl },
+    finalize: false,
+    // Stop after two tiles, the way a wall clock would.
+    shouldStop: () => tilesSeen >= 2,
+    onTileComplete: () => {
+      tilesSeen++
+    }
+  })
+
+  assertEquals(report.tilesTotal, 4)
+  assertEquals(report.tilesFetched, 2)
+  assertEquals(report.complete, false)
+
+  // The whole point of finalize:false. Bumping the version per chunk would tell
+  // every phone to re-check a national dataset once per chunk of the harvest.
+  assertEquals(rpcCalls.length, 0)
+  assertEquals(report.version, null)
+})
+
+Deno.test('resuming skips finished tiles and completes the country', async () => {
+  const { client, rpcCalls } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  // What the first chunk would have recorded.
+  const done = new Set(boundingBoxTiles(fourTiles, 0.25).slice(0, 2).map(tileKey))
+
+  const report = await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl },
+    finalize: false,
+    completedTiles: done
+  })
+
+  assertEquals(report.tilesSkipped, 2)
+  assertEquals(report.tilesFetched, 2)
+  // Fetched plus skipped covers the country, so this chunk is the one allowed
+  // to finalise - even though it only fetched half the tiles itself.
+  assertEquals(report.complete, true)
+  assertEquals(overpass.tileCount(), 2)
+  assertEquals(rpcCalls.length, 0)
+})
+
+// The bug this exists to prevent is the nastiest one in the chunked design.
+// finish_road_limit_sync retires ways last seen before the run started, so if
+// each chunk stamped its own start time, chunk two would retire everything
+// chunk one had just written and the country would end up holding only the
+// tiles from the final chunk - with no error anywhere.
+Deno.test('a resumed chunk writes the original run start, not its own', async () => {
+  const { client, upserted } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  const runStartedAt = '2020-01-01T00:00:00.000Z'
+
+  await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl },
+    finalize: false,
+    runStartedAt
+  })
+
+  assert(upserted.length > 0)
+  for (const row of upserted) {
+    assertEquals(row.last_seen_at, runStartedAt)
+  }
+})
+
+Deno.test('finalize defaults to closing the run out', async () => {
+  const { client, rpcCalls } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  const report = await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl }
+  })
+
+  assertEquals(report.complete, true)
+  assertEquals(rpcCalls.length, 1)
+  assertEquals(rpcCalls[0].fn, 'finish_road_limit_sync')
+  assertEquals(rpcCalls[0].args.p_complete, true)
 })

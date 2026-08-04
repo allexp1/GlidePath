@@ -142,6 +142,46 @@ Every finished tile is written to a checkpoint file beside the script, so ctrl-C
 and re-run resumes rather than starting again. The checkpoint is deleted once a
 run covers the whole country. `--restart` ignores it.
 
+### The same harvest without a laptop
+
+`make seed-limits` needs Deno and a checkout. That is fine for whoever maintains
+the datasets and useless to everyone else, so the same harvest is also available
+as an Edge Function:
+
+```sh
+curl -X POST "$SUPABASE_URL/functions/v1/sync-limits" \
+     -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"country":"MD"}'
+```
+
+**Keep calling it until the response says `done: true`.** One call is one chunk,
+bounded by `budgetMs` (100 s by default) and `maxTiles`. The reply carries
+`tilesDone`, `tilesRemaining` and a `next` line saying what to call.
+
+This does not contradict the section above. The length is what rules out doing a
+country in *one* invocation; it never ruled out doing it in fifty. `syncRoadLimits`
+already accepted a set of finished tiles and reported each one as it landed,
+because it was written to survive a ctrl-C — moving that resume point from a
+local file into `road_limit_harvest` was the whole change.
+
+Two things a chunked run must get right, both of which have tests:
+
+- **Every chunk passes the first chunk's `runStartedAt`.** Retirement is "last
+  seen before the run began". Per-chunk clocks would make each chunk retire what
+  the one before it wrote, and the country would converge on holding only the
+  final chunk's tiles, with nothing anywhere reporting a problem.
+- **Only the chunk that covers the country calls `finish_road_limit_sync`.**
+  That RPC bumps the version phones watch. Per-chunk finalisation would order
+  every phone to re-check a national dataset once per chunk.
+
+Still not on the nightly schedule, for a new reason: cron would fire it once, get
+one chunk, and report success, leaving the country permanently part harvested.
+
+`{"reset": true}` throws the resume point away and starts the country over, which
+is what you want when the tile size or tolerance changed under a half-finished
+run.
+
 ### Which roads count
 
 `DRIVABLE_HIGHWAY_VALUES` in `overpass.ts`: motorway, trunk, primary, secondary,
