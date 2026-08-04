@@ -81,6 +81,20 @@ Deno.serve(async (request: Request) => {
   const maxTiles = numberOr(body.maxTiles, DEFAULT_MAX_TILES)
   const dryRun = body.dryRun === true
 
+  // Worth overriding, and the seed CLI's default is the wrong one here.
+  //
+  // Nearly all of a tile's cost is Overpass resolving `area["ISO3166-1"=...]`,
+  // which it pays per query regardless of how much road the tile contains. That
+  // makes tile count, not tile size, the thing that sets the length of a run:
+  // measured on Moldova, a quarter-degree tile cost about the same as a whole
+  // degree, so 195 tiles took roughly twelve times as long as 16 for identical
+  // output.
+  //
+  // The ceiling is response size - too large and Overpass times out returning
+  // the geometry - so this is a per-country judgement between a sparse country
+  // where one degree is comfortable and a dense one where it is not.
+  const tileDegrees = numberOr(body.tileDegrees, undefined)
+
   const { data: countryData, error: countryError } = await client
     .from('countries')
     .select('code, name, overpass_iso_code, road_limits_run_started_at')
@@ -134,6 +148,7 @@ Deno.serve(async (request: Request) => {
       dryRun,
       completedTiles,
       maxTiles,
+      tileDegrees,
       runStartedAt,
       // This call finalises for itself, below, and only when the country is
       // genuinely covered.
@@ -197,6 +212,7 @@ Deno.serve(async (request: Request) => {
         done: report.complete,
         dryRun,
         tilesTotal: report.tilesTotal,
+        tileDegrees: tileDegrees ?? 'default',
         tilesDone,
         tilesRemaining: report.tilesTotal - tilesDone,
         tilesFailedThisCall: report.tilesFailed,
@@ -258,7 +274,7 @@ async function loadCompletedTiles(
   return tiles
 }
 
-function numberOr(value: unknown, fallback: number): number {
+function numberOr<T extends number | undefined>(value: unknown, fallback: T): number | T {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
