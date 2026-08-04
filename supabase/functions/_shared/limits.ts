@@ -65,6 +65,20 @@ export interface RoadLimitSyncOptions {
   maxTiles?: number
 
   /**
+   * The country's bounding box, when the caller already has it.
+   *
+   * Skips the Overpass probe. That probe is an area lookup against the admin
+   * relation - the same expensive step the tile queries pay - and it is
+   * per-country information that does not change between chunks, so a chunked
+   * caller should resolve it once and pass it here rather than paying for it on
+   * every call.
+   *
+   * The caller then owns what the probe was also doing: proving the ISO code
+   * resolves at all. `fetchCountryBounds` is exported for exactly that.
+   */
+  bounds?: BoundingBox
+
+  /**
    * Checked before each tile; stop cleanly when it returns true.
    *
    * A tile count is a poor proxy for time when tiles vary from an empty desert
@@ -168,8 +182,11 @@ export async function syncRoadLimits(
   const runStartedAt = options.runStartedAt ?? new Date().toISOString()
   const completed = options.completedTiles ?? new Set<string>()
 
-  log(`[${countryCode}] resolving the country boundary`)
-  const bounds = await fetchCountryBounds(isoCode, options.overpass)
+  let bounds = options.bounds
+  if (!bounds) {
+    log(`[${countryCode}] resolving the country boundary`)
+    bounds = await fetchCountryBounds(isoCode, options.overpass)
+  }
   const tiles = boundingBoxTiles(bounds, options.tileDegrees ?? 0.25)
 
   log(

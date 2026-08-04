@@ -25,8 +25,9 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { recordRoadLimitFailure, syncRoadLimits } from '../_shared/limits.ts'
+import { fetchCountryBounds, recordRoadLimitFailure, syncRoadLimits } from '../_shared/limits.ts'
 import type { DatabaseClient } from '../_shared/sync.ts'
+import type { BoundingBox } from '../_shared/geo.ts'
 
 /**
  * How long to spend fetching before stopping cleanly.
@@ -48,6 +49,7 @@ interface CountryRow {
   name: string
   overpass_iso_code: string | null
   road_limits_run_started_at: string | null
+  road_limits_bounds: BoundingBox | null
 }
 
 Deno.serve(async (request: Request) => {
@@ -97,7 +99,7 @@ Deno.serve(async (request: Request) => {
 
   const { data: countryData, error: countryError } = await client
     .from('countries')
-    .select('code, name, overpass_iso_code, road_limits_run_started_at')
+    .select('code, name, overpass_iso_code, road_limits_run_started_at, road_limits_bounds')
     .eq('code', country)
     .maybeSingle()
 
@@ -119,9 +121,26 @@ Deno.serve(async (request: Request) => {
       await client.from('road_limit_harvest').delete().eq('country_code', country)
       await client
         .from('countries')
-        .update({ road_limits_run_started_at: null })
+        .update({ road_limits_run_started_at: null, road_limits_bounds: null })
         .eq('code', country)
       row.road_limits_run_started_at = null
+      row.road_limits_bounds = null
+    }
+
+    // Resolved once per country instead of once per chunk. This is the same
+    // Overpass area lookup the tile queries pay for, and at a 150 s ceiling per
+    // invocation it was a large share of the budget being spent re-learning
+    // where Moldova is.
+    let bounds = row.road_limits_bounds
+    if (!bounds) {
+      bounds = await fetchCountryBounds(iso)
+      if (!dryRun) {
+        const { error } = await client
+          .from('countries')
+          .update({ road_limits_bounds: bounds })
+          .eq('code', country)
+        if (error) console.warn(`[${country}] could not cache the bounds: ${error.message}`)
+      }
     }
 
     const completedTiles = await loadCompletedTiles(client, country)
@@ -149,6 +168,7 @@ Deno.serve(async (request: Request) => {
       completedTiles,
       maxTiles,
       tileDegrees,
+      bounds,
       runStartedAt,
       // This call finalises for itself, below, and only when the country is
       // genuinely covered.
