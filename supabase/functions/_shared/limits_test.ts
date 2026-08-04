@@ -262,9 +262,15 @@ function fakeOverpass(box: BoundingBox) {
   let tileRequests = 0
 
   const fetchImpl = ((_url: string, init?: RequestInit) => {
-    const body = String((init?.body as URLSearchParams | undefined) ?? '')
+    // Read the query back out of the form body rather than stringifying it.
+    // runOverpassQuery sends URLSearchParams, so String() gives percent-encoded
+    // form data in which "out bb" appears as "out+bb" - a substring check
+    // against the raw text silently never matches, every query looks like a
+    // tile query, and the bounds probe fails with "no boundary for ISO code".
+    const raw = init?.body
+    const query = raw instanceof URLSearchParams ? (raw.get('data') ?? '') : String(raw ?? '')
 
-    if (body.includes('out bb')) {
+    if (query.includes('out bb')) {
       return Promise.resolve(
         new Response(
           JSON.stringify({
