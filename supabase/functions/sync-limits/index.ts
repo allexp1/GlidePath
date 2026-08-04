@@ -83,18 +83,26 @@ Deno.serve(async (request: Request) => {
   const maxTiles = numberOr(body.maxTiles, DEFAULT_MAX_TILES)
   const dryRun = body.dryRun === true
 
-  // Worth overriding, and the seed CLI's default is the wrong one here.
+  // Worth overriding, but there is no setting here that makes a run quick.
   //
-  // Nearly all of a tile's cost is Overpass resolving `area["ISO3166-1"=...]`,
-  // which it pays per query regardless of how much road the tile contains. That
-  // makes tile count, not tile size, the thing that sets the length of a run:
-  // measured on Moldova, a quarter-degree tile cost about the same as a whole
-  // degree, so 195 tiles took roughly twelve times as long as 16 for identical
-  // output.
+  // A tile costs roughly two minutes whatever it contains. Measured on Moldova,
+  // a half-degree tile holding no roads at all still took 115 seconds, so the
+  // cost is the query itself - Overpass resolving `area["ISO3166-1"=...]` - and
+  // not the data. Tile size therefore buys nothing directly; it only changes how
+  // many queries a country needs, and that is what sets the length of a run.
   //
-  // The ceiling is response size - too large and Overpass times out returning
-  // the geometry - so this is a per-country judgement between a sparse country
-  // where one degree is comfortable and a dense one where it is not.
+  // Which argues for the largest tiles possible, except that a tile also has to
+  // return inside the 150 second invocation ceiling, and a big tile over a
+  // capital city does not. Moldova at one degree is 16 queries and livelocks on
+  // Chisinau: the call is killed mid-tile, nothing is recorded, and the next
+  // call retries the same tile forever. At half a degree it is 56 queries that
+  // all finish.
+  //
+  // So this trades total queries against the chance of a tile nobody can
+  // finish, and the right answer differs *within* one country - sparse
+  // borderland and a capital want different sizes. The honest fix is to
+  // subdivide a tile that times out rather than retry it; until then this is a
+  // per-country guess that should err small.
   const tileDegrees = numberOr(body.tileDegrees, undefined)
 
   const { data: countryData, error: countryError } = await client

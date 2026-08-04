@@ -182,6 +182,33 @@ one chunk, and report success, leaving the country permanently part harvested.
 is what you want when the tile size or tolerance changed under a half-finished
 run.
 
+#### Expect it to be slow, and expect tile size to matter
+
+A tile costs about two minutes whatever is in it. On Moldova a half-degree tile
+containing no roads at all still took 115 seconds, so the cost is the Overpass
+query itself — resolving `area["ISO3166-1"=...]` — and not the data coming back.
+A country is therefore roughly `tiles × 2 minutes`, and at one tile per
+invocation that is hours, not minutes. Moldova's 56 tiles is about four.
+
+That argues for the largest tiles you can get away with, and there is a hard
+limit on how large:
+
+| Moldova at | Tiles | Outcome |
+| --- | --- | --- |
+| 0.25° | 195 | every tile finishes; ~7 hours of query overhead |
+| 0.5° | 56 | every tile finishes; ~4 hours |
+| 1.0° | 16 | **livelocks** — the Chișinău tile never returns inside 150 s |
+
+The livelock is the failure worth knowing about. A tile that cannot finish
+inside the invocation ceiling is killed mid-request, so it is never recorded,
+so the next call picks the same tile and dies the same way. The harvest runs
+forever at zero progress, and every call still reports a cheerful
+`done: false`.
+
+`tileDegrees` should therefore err small. The real fix is for a timed-out tile
+to be subdivided rather than retried, which would let a run start coarse and
+refine only where it has to; that is not built yet.
+
 ### Which roads count
 
 `DRIVABLE_HIGHWAY_VALUES` in `overpass.ts`: motorway, trunk, primary, secondary,
