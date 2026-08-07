@@ -18,6 +18,12 @@ PROJECT      := $(IOS_DIR)/GlidePath.xcodeproj
 SCHEME       := GlidePath
 DESTINATION  ?= platform=iOS Simulator,name=iPhone 17 Pro
 
+# xcbeautify makes an xcodebuild log readable, and is optional on purpose:
+# `make bootstrap` does not install it, so requiring it meant `make build` died
+# with "xcbeautify: command not found" before xcodebuild produced a single line.
+# Fall back to cat, which is ugly and works.
+FORMAT := $(shell command -v xcbeautify >/dev/null 2>&1 && echo xcbeautify || echo cat)
+
 .PHONY: help
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -34,7 +40,7 @@ bootstrap: ## Install the toolchain (XcodeGen, SwiftLint, Supabase CLI, Deno) vi
 	@# a different tap, which is exactly what happens with the Supabase CLI: it
 	@# used to live in supabase/tap and now ships in homebrew/core, and Homebrew
 	@# refuses to have both.
-	@for tool in xcodegen swiftlint supabase deno; do \
+	@for tool in xcodegen swiftlint xcbeautify supabase deno; do \
 		if command -v $$tool >/dev/null 2>&1; then \
 			echo "$$tool: already installed ($$(command -v $$tool))"; \
 		else \
@@ -80,6 +86,86 @@ Config.xcconfig:
 project: Config.xcconfig ## Generate the Xcode project from ios/project.yml
 	cd $(IOS_DIR) && xcodegen generate
 
+.PHONY: doctor
+doctor: ## Check the machine for the things that break a build before your code does
+	@# Everything here is something that has actually cost someone an evening,
+	@# and none of it shows up as itself. A Rosetta shell reports fifteen
+	@# "unable to resolve module dependency" errors; git's Unicode setting
+	@# reports a failure to unlink a file called "a"; an evicted iCloud file
+	@# reports a missing package product. The build error never names the cause,
+	@# so check the causes directly.
+	@echo "== toolchain =="
+	@for tool in xcodegen swiftlint xcbeautify; do \
+		if command -v $$tool >/dev/null 2>&1; then \
+			echo "  ok       $$tool"; \
+		elif [ "$$tool" = "xcbeautify" ]; then \
+			echo "  optional $$tool missing (logs will be raw)"; \
+		else \
+			echo "  MISSING  $$tool - run: make bootstrap"; \
+		fi; \
+	done
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		echo "  ok       $$(xcodebuild -version | head -1)"; \
+	else \
+		echo "  MISSING  xcodebuild - install Xcode from the App Store"; \
+	fi
+	@echo ""
+	@echo "== architecture =="
+	@# A Terminal opened under Rosetta makes xcodebuild build the app for
+	@# x86_64 while SwiftPM builds the packages for arm64. Nothing says
+	@# "Rosetta"; you get "module file is incompatible with this Swift
+	@# compiler" and every import failing.
+	@hw=$$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0); \
+	arch=$$(uname -m); \
+	if [ "$$hw" = "1" ] && [ "$$arch" != "arm64" ]; then \
+		echo "  PROBLEM  Apple Silicon Mac but this shell reports $$arch"; \
+		echo "           This shell is under Rosetta. Either prefix commands with"; \
+		echo "           'arch -arm64', or uncheck Open using Rosetta in Terminal's"; \
+		echo "           Get Info panel and reopen it."; \
+	else \
+		echo "  ok       $$arch"; \
+	fi
+	@echo ""
+	@echo "== git =="
+	@# macOS stores filenames decomposed; git expects them precomposed. Without
+	@# this, cloning a repository containing an accented filename - GRDB has
+	@# them - dies with "failed to unlink" on a name that looks perfectly fine.
+	@if [ "$$(git config --get core.precomposeunicode)" = "true" ]; then \
+		echo "  ok       core.precomposeunicode"; \
+	else \
+		echo "  PROBLEM  core.precomposeunicode is not true"; \
+		echo "           Package clones will fail on accented filenames. Fix:"; \
+		echo "           git config --global core.precomposeunicode true"; \
+	fi
+	@echo ""
+	@echo "== working copy =="
+	@if [ -f Config.xcconfig ]; then \
+		if grep -q 'YOUR-PROJECT-REF\|YOUR-ANON-KEY\|YOUR-TEAM-ID' Config.xcconfig; then \
+			echo "  PROBLEM  Config.xcconfig still has placeholder values in it"; \
+			echo "           It will build and then throw on launch. Fill it in."; \
+		else \
+			echo "  ok       Config.xcconfig"; \
+		fi; \
+	else \
+		echo "  MISSING  Config.xcconfig - cp Config.example.xcconfig Config.xcconfig"; \
+	fi
+	@# An evicted iCloud file is a zero-byte placeholder. SwiftPM cannot read a
+	@# placeholder Package.swift and reports it as a missing package product.
+	@evicted=$$(find . -name '*.icloud' -not -path './.git/*' 2>/dev/null | head -5); \
+	if [ -n "$$evicted" ]; then \
+		echo "  PROBLEM  iCloud has evicted files from this checkout:"; \
+		echo "$$evicted" | sed 's/^/             /'; \
+		echo "           Fix: brctl download \"$$(pwd)\", then right-click the"; \
+		echo "           folder in Finder and choose Keep Downloaded."; \
+	else \
+		echo "  ok       no evicted iCloud placeholders"; \
+	fi
+	@case "$$(pwd)" in \
+		*com~apple~CloudDocs*) \
+			echo "  note     this checkout is inside iCloud Drive; builds work but"; \
+			echo "           eviction and sync churn are on you to watch" ;; \
+	esac
+
 # ---------------------------------------------------------------------------
 # Build and test
 # ---------------------------------------------------------------------------
@@ -90,12 +176,21 @@ test: ## Run the core engine unit tests (no simulator needed)
 
 .PHONY: build
 build: project ## Build the iOS app for the simulator
-	xcodebuild build \
+	@# pipefail, and no `|| true`.
+	@#
+	@# This used to end in `| xcbeautify || true`, which had two ways of lying.
+	@# Piping puts xcodebuild's exit status out of reach, so make saw only
+	@# xcbeautify's, and `|| true` then discarded even that: a failed build
+	@# exited 0 and `make build && make archive` would happily archive code that
+	@# had not compiled. It also hid xcodebuild's stdout when xcbeautify was
+	@# missing, leaving only stderr - which is why a broken build showed a pile
+	@# of errors and no sign of what it had been doing.
+	set -o pipefail; xcodebuild build \
 		-project $(PROJECT) \
 		-scheme $(SCHEME) \
 		-destination '$(DESTINATION)' \
 		CODE_SIGNING_ALLOWED=NO \
-		| xcbeautify || true
+		| $(FORMAT)
 
 .PHONY: test-app
 test-app: project ## Run the full test suite through xcodebuild on a simulator
