@@ -209,6 +209,46 @@ forever at zero progress, and every call still reports a cheerful
 to be subdivided rather than retried, which would let a run start coarse and
 refine only where it has to; that is not built yet.
 
+#### Driving it from pg_cron, and remembering to stop
+
+Calling it by hand for four hours is nobody's idea of a good time, so schedule
+it and let it run:
+
+```sql
+select cron.schedule('md-road-limits', '*/4 * * * *', $job$
+  select net.http_post(
+    url := 'https://YOUR-REF.supabase.co/functions/v1/sync-limits',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer YOUR-ANON-KEY'),
+    body := '{"country":"MD","tileDegrees":0.5,"maxTiles":8,"budgetMs":60000}'::jsonb,
+    timeout_milliseconds := 170000);
+$job$);
+```
+
+Space the schedule wider than a call takes, or firings overlap and two chunks
+harvest the same tile.
+
+**Unschedule it when the country finishes.** Completing clears the checkpoint and
+the run marker, so the next firing does not find a finished country — it finds a
+clean slate and starts the whole harvest again.
+
+```sql
+select cron.unschedule('md-road-limits');
+```
+
+#### Harvested so far
+
+| Country | Ways | Version |
+| --- | --- | --- |
+| Moldova | 6883 | 1 |
+| Israel | — | not harvested |
+| Lithuania | — | not harvested |
+
+Moldova's distribution looks like a country rather than a scrape artifact: 3840
+ways at 50, 1060 at 90, then a tail through 70/60/40/30. The 20s and 5s are car
+parks and living streets, which is the tagging behaving as designed.
+
 ### Which roads count
 
 `DRIVABLE_HIGHWAY_VALUES` in `overpass.ts`: motorway, trunk, primary, secondary,

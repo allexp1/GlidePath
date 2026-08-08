@@ -70,7 +70,18 @@ of its own.
 
 ### Supabase
 
-PostGIS tables, row level security, and one scheduled Edge Function.
+PostGIS tables, row level security, and two Edge Functions.
+
+`sync-cameras` is the scheduled one: three Overpass queries per country,
+finishing in a couple of minutes, fired nightly by `pg_cron` through `pg_net`.
+
+`sync-limits` is deliberately **not** scheduled. Road limits are three orders of
+magnitude larger, and a national harvest is hours of Overpass queries against a
+150 second invocation ceiling, so it runs in chunks: each call does what fits,
+records which tiles it finished in `road_limit_harvest`, and answers
+`done: false` until the country is covered. Cron would fire it once, get one
+chunk, and report success — leaving a country permanently half harvested, which
+is the exact shape of failure the rest of this design exists to prevent.
 
 The phone reads through `*_public` views rather than the tables. Two reasons:
 PostgREST serialises geography columns as WKB hex, and putting a WKB parser on

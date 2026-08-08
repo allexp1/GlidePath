@@ -185,6 +185,24 @@ Mac that has ever opened Xcode is normally the right one.
 
 ## When it fails
 
+If the failure is a *local build* rather than the upload, run `make doctor`
+before reading any further. Building this project on a fresh Mac has a run of
+failures that name something other than their cause — a Rosetta shell, git's
+`core.precomposeunicode` setting, stale DerivedData, an iCloud-evicted
+`Package.swift` — and all of them surface as unresolved modules or missing
+package products. `doctor` checks the causes directly. The table in the README
+lists the pairings.
+
+Two more that `doctor` cannot see:
+
+**`xcbeautify: command not found`** — cosmetic. `make build` falls back to raw
+output. `make bootstrap` installs it.
+
+**Archive greyed out in Xcode** — a simulator is selected. Choose **Any iOS
+Device (arm64)**.
+
+The upload failures proper:
+
 **"No signing certificate Apple Distribution found"** — the .p12 did not import.
 Almost always the export in step 4 caught the certificate without its private
 key. Re-export from the row with the disclosure triangle.

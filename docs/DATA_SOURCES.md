@@ -147,6 +147,38 @@ against that country without stopping the others.
 Rows with `source = 'manual'` or `source = 'report'` are never touched by the
 OSM job. Israel's hand-seeded sections would otherwise be wiped on the first run.
 
+### It fails silently, so verify it is running
+
+Two things sit between the schedule and Overpass, and both fail without saying
+anything.
+
+The credentials live in Supabase Vault and cannot be committed, so a fresh
+project has none and every run dies at authentication. See the setup note in the
+README.
+
+Underneath that, the `pg_net` background worker delivers the request, and it can
+die — leaving requests queued forever with no response and no error anywhere:
+
+```sql
+select count(*) from net.http_request_queue;   -- queued
+select count(*) from net._http_response;       -- ever answered
+select net.worker_restart();                   -- revive it
+```
+
+A backlog against zero responses is the signature. From the outside a dead
+worker and missing secrets look identical: nothing happens. Check
+`countries.last_synced_at` occasionally rather than assuming the schedule works,
+because stale camera data is invisible until someone drives past a camera the
+app does not know about.
+
+### Road limits are harvested separately, and slowly
+
+Not on this schedule, and not by this function — see the section above on posted
+speed limits and [SPEED_LIMITS.md](SPEED_LIMITS.md). The reason is cost: an
+Overpass query takes roughly two minutes whatever it returns, because resolving
+`area["ISO3166-1"=...]` dominates, and a country runs to dozens or hundreds of
+tiled queries. Moldova took four hours for 6883 ways.
+
 ## Hand-entered data
 
 Israel's new sections live in `supabase/seed/israel_zones.json`. See

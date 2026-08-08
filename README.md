@@ -59,9 +59,35 @@ is the fastest way to check nothing is broken.
 | An Apple Team ID | only to run on a physical device |
 | Deno | for the seed scripts |
 
-`make bootstrap` installs the four command-line tools, skipping any you already
-have. If it reports a Homebrew tap conflict on `supabase`, you already have the
-CLI and it will be skipped.
+`make bootstrap` installs the command-line tools, skipping any you already have.
+If it reports a Homebrew tap conflict on `supabase`, you already have the CLI and
+it will be skipped.
+
+### When the build fails and the error makes no sense
+
+```sh
+make doctor
+```
+
+It checks the machine rather than the code, because this stack has a run of
+failures that report something other than their cause:
+
+| What you see | What it actually is |
+| --- | --- |
+| a dozen `unable to resolve module dependency` | the shell is under Rosetta, so the app builds x86_64 while the packages build arm64 |
+| `module file is incompatible with this Swift compiler` | stale DerivedData |
+| `failed to unlink '.../ä'` fetching GRDB | `core.precomposeunicode` unset; macOS stores filenames decomposed and git expects them precomposed |
+| `Missing package product 'GlidePathCore'` | packages not resolved since the last `make project`, or an iCloud-evicted `Package.swift` |
+| `RPC failed; curl 56` fetching GRDB | a large clone over an unstable link |
+
+`doctor` names the cause and the command that fixes it. For the last one, set
+`git config --global http.version HTTP/1.1`, or clone GRDB once by hand with
+`--filter=blob:none` and point the `packages:` block in `ios/project.yml` at that
+local path — a local override, not something to commit.
+
+A checkout inside iCloud Drive builds fine, but eviction turns files into
+zero-byte placeholders SwiftPM cannot read. Right-click the folder in Finder and
+choose **Keep Downloaded**; `doctor` warns when it finds placeholders.
 
 ### One thing the setup does not do
 
@@ -76,6 +102,20 @@ select vault.create_secret('YOUR-SERVICE-ROLE-KEY',        'service_role_key');
 
 Until you do, the schedule fires and fails harmlessly. Seeding by hand still
 works, and `make seed` prints a reminder.
+
+It fails *quietly*, though, so check rather than assume. If the nightly job
+appears to do nothing, look at the plumbing under it before suspecting the
+function:
+
+```sql
+select count(*) from net.http_request_queue;   -- queued
+select count(*) from net._http_response;       -- ever answered
+```
+
+Requests piling up against zero responses means the `pg_net` background worker
+has died, which it does. `select net.worker_restart();` brings it back. A dead
+worker and missing Vault secrets look identical from the outside — nothing
+happens, and nothing says so.
 
 ---
 
@@ -357,12 +397,24 @@ own version line, geometry simplified to 8 m before it is stored, and indexed on
 the phone by grid cell rather than by bounding box.
 
 ```bash
-make seed-limits CODE=LT      # tens of minutes, resumable, ctrl-C is safe
+make seed-limits CODE=LT      # hours, resumable, ctrl-C is safe
 ```
 
-Roads tagged with an implicit limit — `LT:urban`, `none`, `walk` — are dropped
-rather than resolved against a table of national defaults. See
+Budget for **hours, not minutes**. An Overpass query costs roughly two minutes
+whatever it returns — a half-degree tile containing no roads at all still took
+115 seconds — because the cost is resolving the country area, not the data. A
+country is about `tiles × 2 minutes`; Moldova took four hours.
+
+There is a second front end onto the same harvest for when you cannot run the
+CLI: the `sync-limits` Edge Function does the identical work in chunks, and you
+call it until it answers `done: true`. Both are described, with the tile-size
+trap that can make a run livelock at zero progress while reporting success, in
 [docs/SPEED_LIMITS.md](docs/SPEED_LIMITS.md).
+
+Roads tagged with an implicit limit — `LT:urban`, `none`, `walk` — are dropped
+rather than resolved against a table of national defaults.
+
+Harvested so far: **Moldova, 6883 ways.** Israel and Lithuania are not done.
 
 ### Countries
 
