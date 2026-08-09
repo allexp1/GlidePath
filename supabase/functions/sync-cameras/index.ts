@@ -54,10 +54,27 @@ Deno.serve(async (request: Request) => {
 
   // sync_enabled, not enabled. Every country is listed in the app; only a
   // handful should be pulled from Overpass nightly.
+  //
+  // Stalest first, and this ordering is load-bearing rather than tidy. An Edge
+  // Function is killed at 150 seconds and a country costs the best part of a
+  // minute, so a run covers two or three of them and no more. Without an order
+  // the query returns the same countries in the same sequence every night, the
+  // ones at the front are re-synced daily, and the ones past the ceiling are
+  // never synced again - silently, because the run reports success for
+  // everything it did reach.
+  //
+  // Observed exactly that: a full run got through Israel and Moldova and was
+  // killed before Lithuania, which had last been synced ten days earlier.
+  //
+  // Ordering by last_synced_at makes the cut-off rotate. Whoever was skipped
+  // last night is at the front tonight, so three countries are covered every
+  // two nights instead of one country never being covered at all. nullsFirst
+  // puts a country that has never been synced ahead of every country that has.
   const { data, error } = await client
     .from('countries')
     .select('code, name, overpass_iso_code')
     .eq('sync_enabled', true)
+    .order('last_synced_at', { ascending: true, nullsFirst: true })
 
   if (error) {
     return json({ error: `could not list countries: ${error.message}` }, 500)

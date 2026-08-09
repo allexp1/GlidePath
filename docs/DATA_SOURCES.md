@@ -141,6 +141,24 @@ seeing nothing.
 Step 4 matters just as much: without it, one Overpass timeout would permanently
 degrade the dataset.
 
+### One run does not cover every country, and that is handled by the order
+
+An Edge Function is killed at 150 seconds. A country costs the better part of a
+minute, so a run gets through two or three of them and is then cut off mid-way
+through the next. That is survivable — the countries it did reach are current,
+and it reports what it did — but only if the cut-off *moves*.
+
+The countries are therefore selected `order by last_synced_at asc nulls first`.
+Whoever was skipped last night is at the front tonight, so three countries are
+covered every two nights. Without the order the query returns the same sequence
+every run: the first two are re-synced daily and everything past the ceiling is
+never synced again, while each run still reports success for the countries it
+managed. A country that has never been synced sorts ahead of every country that
+has.
+
+This was not theoretical. A full run reached Israel and Moldova and was killed
+before Lithuania, whose data was ten days old at the time.
+
 Countries are synced sequentially, and one country failing records an error
 against that country without stopping the others.
 
