@@ -44,3 +44,11 @@ PRODUCT_BUNDLE_IDENTIFIER = ai.zonexplo.app
 // ---------------------------------------------------------------------------
 
 CODE_SIGN_STYLE = Automatic
+
+// ---------------------------------------------------------------------------
+// PostHog - product analytics
+// ---------------------------------------------------------------------------
+// Optional. Leave it empty and the app never contacts an analytics service:
+// Analytics.start() refuses to initialise the SDK without a key, so a fork
+// phones nowhere by default.
+POSTHOG_API_KEY =

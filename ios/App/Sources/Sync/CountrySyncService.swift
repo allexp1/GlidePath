@@ -187,6 +187,11 @@ final class CountrySyncService {
             try await markInstalled(code)
             countries = (try? await loadStatuses()) ?? []
             progress = .idle
+
+            // The country code is not a location: it is the same fact the
+            // download list already shows, and knowing which countries are
+            // worth harvesting next is the point of collecting anything.
+            Analytics.capture(.countryDownloaded, ["country": code, "full": plan.isFull])
         } catch {
             progress = .failed(country: code, message: error.localizedDescription)
         }
@@ -197,6 +202,8 @@ final class CountrySyncService {
         case full
         /// Ask for everything changed strictly after this timestamp.
         case delta(since: Date)
+
+        var isFull: Bool { if case .full = self { return true } else { return false } }
     }
 
     private func plan(for code: String, forceFull: Bool) async throws -> SyncPlan {

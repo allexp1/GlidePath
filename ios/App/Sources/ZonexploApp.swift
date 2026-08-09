@@ -5,6 +5,15 @@ struct ZonexploApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Before any UI, because autocapture cannot record a screen that has
+        // already appeared. Reads the persisted preference directly rather than
+        // through AppModel: the opt-out has to be honoured on the very first
+        // frame, and AppModel is created alongside this.
+        let enabled = UserDefaults.standard.object(forKey: "settings.analyticsEnabled") as? Bool ?? true
+        MainActor.assumeIsolated { Analytics.start(enabled: enabled) }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

@@ -91,16 +91,36 @@ final class AppModel {
     }
 
     func startMonitoring() {
+        let wasWatching = settings.isWatching
         settings.isWatching = true
         monitor?.start()
+        // Only the transition. scenePhase re-asserts this on every activation,
+        // and counting that would report a number that means "app opened".
+        if !wasWatching { Analytics.capture(.watchStarted) }
     }
 
     func stopMonitoring() {
+        let wasWatching = settings.isWatching
         settings.isWatching = false
         monitor?.stop()
+        if wasWatching { Analytics.capture(.watchStopped) }
+    }
+
+    /// Starting and stopping the SDK from the toggle, so "off" means the
+    /// library is shut down rather than merely unused.
+    private func applyAnalyticsSetting() {
+        if settings.analyticsEnabled {
+            Analytics.start(enabled: true)
+        } else {
+            // Captured before the shutdown, or it never leaves the device -
+            // which is the one number that tells us how unwelcome this is.
+            Analytics.capture(.analyticsOptOut)
+            Analytics.stop()
+        }
     }
 
     private func applySettings() {
+        applyAnalyticsSetting()
         voice.settings = settings.voiceSettings
         monitor?.settings = settings.driveSettings
     }
@@ -126,6 +146,16 @@ struct AppSettings: Equatable {
     /// Zonexplo pick the best installed one", which is the default.
     var voiceIdentifier: String?
 
+    /// How fast the voice speaks, as a fraction of the system default.
+    /// Exposed because "a bit quicker" and "a bit slower" are the two most
+    /// common things anyone wants from a spoken alert, and neither is worth
+    /// a support conversation.
+    var speechRate: Double
+
+    /// Anonymous usage analytics. Opt-out rather than opt-in, disclosed in
+    /// onboarding, and gating the SDK itself rather than the call sites.
+    var analyticsEnabled: Bool
+
     var hasSeenOnboarding: Bool
 
     /// Whether the driver had the app watching the road when it was last
@@ -144,6 +174,8 @@ struct AppSettings: Equatable {
         showSpeedLimit = defaults.object(forKey: Keys.showSpeedLimit) as? Bool ?? true
         respectSilentSwitch = defaults.object(forKey: Keys.respectSilentSwitch) as? Bool ?? false
         voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
+        speechRate = defaults.object(forKey: Keys.speechRate) as? Double ?? 1.05
+        analyticsEnabled = defaults.object(forKey: Keys.analyticsEnabled) as? Bool ?? true
         hasSeenOnboarding = defaults.bool(forKey: Keys.hasSeenOnboarding)
         isWatching = defaults.bool(forKey: Keys.isWatching)
     }
@@ -160,6 +192,8 @@ struct AppSettings: Equatable {
         defaults.set(respectSilentSwitch, forKey: Keys.respectSilentSwitch)
         // set(nil:) removes the key, which is exactly what "automatic" means.
         defaults.set(voiceIdentifier, forKey: Keys.voiceIdentifier)
+        defaults.set(speechRate, forKey: Keys.speechRate)
+        defaults.set(analyticsEnabled, forKey: Keys.analyticsEnabled)
         defaults.set(hasSeenOnboarding, forKey: Keys.hasSeenOnboarding)
         defaults.set(isWatching, forKey: Keys.isWatching)
     }
@@ -182,6 +216,7 @@ struct AppSettings: Equatable {
         settings.enabled = voiceEnabled
         settings.respectSilentSwitch = respectSilentSwitch
         settings.voiceIdentifier = voiceIdentifier
+        settings.rateScale = speechRate
         return settings
     }
 
@@ -196,6 +231,8 @@ struct AppSettings: Equatable {
         static let showSpeedLimit = "settings.showSpeedLimit"
         static let respectSilentSwitch = "settings.respectSilentSwitch"
         static let voiceIdentifier = "settings.voiceIdentifier"
+        static let speechRate = "settings.speechRate"
+        static let analyticsEnabled = "settings.analyticsEnabled"
         static let hasSeenOnboarding = "settings.hasSeenOnboarding"
         static let isWatching = "settings.isWatching"
     }

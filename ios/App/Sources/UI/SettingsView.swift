@@ -29,6 +29,14 @@ struct SettingsView: View {
                 }
                 .disabled(!model.settings.voiceEnabled || spokenLanguageVoices.isEmpty)
 
+                VStack(alignment: .leading, spacing: 2) {
+                    LabeledContent("Speaking speed", value: rateLabel)
+                    Slider(value: $model.settings.speechRate, in: 0.7...1.4, step: 0.05)
+                        .accessibilityLabel("Speaking speed")
+                        .accessibilityValue(rateLabel)
+                }
+                .disabled(!model.settings.voiceEnabled)
+
                 Button("Hear a sample") {
                     model.voice.preview()
                 }
@@ -118,6 +126,20 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Share anonymous usage", isOn: $model.settings.analyticsEnabled)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text(
+                    "Counts of things like how often the app is watching the road and which "
+                        + "countries get downloaded, so the parts nobody uses can be found and "
+                        + "removed. Never your location, never a camera or a road, and no "
+                        + "account is involved because there is not one. Turning this off shuts "
+                        + "the collector down rather than muting it."
+                )
+            }
+
+            Section {
                 LabeledContent("Version", value: version)
             } footer: {
                 Text(
@@ -151,6 +173,17 @@ struct SettingsView: View {
     /// The voices that can read the Phrasebook, best first.
     private var spokenLanguageVoices: [VoiceOption] {
         VoiceCatalogue.matching(model.voice.availableVoices, language: VoiceCatalogue.spokenLanguage)
+    }
+
+    /// Words rather than a multiplier: 1.05 means nothing to anyone.
+    private var rateLabel: String {
+        switch model.settings.speechRate {
+        case ..<0.85: return "Slow"
+        case ..<1.0: return "Relaxed"
+        case ..<1.15: return "Normal"
+        case ..<1.3: return "Brisk"
+        default: return "Fast"
+        }
     }
 
     private var voiceFooter: String {

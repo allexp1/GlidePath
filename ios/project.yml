@@ -39,6 +39,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: "7.0.0"
+  PostHog:
+    url: https://github.com/PostHog/posthog-ios.git
+    from: "3.59.3"
 
 targets:
   Zonexplo:
@@ -56,6 +59,8 @@ targets:
         product: ZonexploCore
       - package: GRDB
         product: GRDB
+      - package: PostHog
+        product: PostHog
 
     settings:
       base:
@@ -113,6 +118,10 @@ targets:
         # xcconfig file be the only thing a new developer edits.
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+
+        # Empty in a fresh clone, and Analytics.start() treats empty as "never
+        # initialise the SDK", so a fork contacts no analytics service at all.
+        POSTHOG_API_KEY: $(POSTHOG_API_KEY)
 
         # "Always" is required so a zone geofence can wake the app when the
         # phone is locked and Zonexplo is not on screen. OnboardingView

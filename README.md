@@ -473,9 +473,32 @@ legal advice this repository does not contain.
 
 ### Privacy
 
-There is no account, no analytics and no telemetry. Location never leaves the
-phone. Zone history is written to the local database and stays there. The only
-network traffic the app makes is anonymous reads of public camera data.
+There is no account. **Location never leaves the phone**, and that is the claim
+everything else is arranged around: zone history is written to the local
+database and stays there, and no request the app makes carries a coordinate.
+
+There is anonymous usage measurement, and it is worth being exact about what
+that means because "analytics" covers things this app deliberately does not do.
+What is collected is a count: app launches, which screens are opened, when
+watching starts and stops, and which countries get downloaded. What is not
+collected, and is refused in `Analytics.swift` rather than merely omitted at the
+call sites:
+
+- **No session replay.** The home screen is a live map centred on the driver, so
+  a recording of it is a recording of where they went. Masking does not help,
+  because the position *is* the map.
+- **No per-camera or per-zone events.** A count of camera warnings is harmless
+  once and a movement trace at a thousand timestamps; only volume separates
+  them.
+- **No `identify()`.** There are no accounts, so there is nobody to name, and
+  deriving an identity from the device would turn a counter into a person.
+- **No taps.** Screen views already say which screens earn their keep; the
+  sequence of controls somebody touched is a behavioural trace.
+
+`Settings > Privacy > Share anonymous usage` turns it off, which shuts the
+collector down and discards its anonymous id rather than muting it. Building
+with an empty `POSTHOG_API_KEY` — the default in `Config.example.xcconfig` —
+produces an app that never contacts an analytics service at all.
 
 ---
 
