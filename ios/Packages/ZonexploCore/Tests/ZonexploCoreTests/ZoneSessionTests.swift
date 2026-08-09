@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// End-to-end drives through the state machine. Each one is a scenario from the
 /// product brief rather than a unit of code.

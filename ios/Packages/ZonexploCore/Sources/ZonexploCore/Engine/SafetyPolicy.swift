@@ -2,7 +2,7 @@ import Foundation
 
 /// Every tunable in the engine, in one place.
 ///
-/// The important one is the coaching floor. GlidePath's whole trick is telling
+/// The important one is the coaching floor. Zonexplo's whole trick is telling
 /// a driver to slow down, and a naive implementation of that will happily tell
 /// someone to do 18 km/h in the outside lane of a motorway because the maths
 /// said so. That is more dangerous than the fine. The floor is the hard stop
@@ -76,7 +76,7 @@ public struct SafetyPolicy: Sendable, Equatable {
 
     public static let standard = SafetyPolicy()
 
-    /// The slowest speed GlidePath is willing to ask for in this zone.
+    /// The slowest speed Zonexplo is willing to ask for in this zone.
     ///
     /// Takes the strictest of: the absolute floor, a fraction of the limit, and
     /// any posted legal minimum. Then caps the result at the limit itself, so a

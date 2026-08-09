@@ -33,11 +33,11 @@ under Membership details.
 
 ### 2. A bundle identifier you own
 
-The repository ships `ai.glidepath.app` as an example. It must be globally
+The repository ships `ai.zonexplo.app` as an example. It must be globally
 unique, so unless you own that domain, pick your own, then register it at
 [Certificates, Identifiers & Profiles → Identifiers](https://developer.apple.com/account/resources/identifiers/list).
 
-Nothing else needs the app-services checkboxes: GlidePath uses background
+Nothing else needs the app-services checkboxes: Zonexplo uses background
 location and audio, both of which are Info.plist keys rather than capabilities.
 
 ### 3. An app record in App Store Connect
@@ -87,7 +87,7 @@ build.
 | Secret | What it is |
 | --- | --- |
 | `APPLE_TEAM_ID` | 10-character Team ID from step 1 |
-| `APPLE_BUNDLE_ID` | The identifier from step 2, e.g. `com.example.glidepath` |
+| `APPLE_BUNDLE_ID` | The identifier from step 2, e.g. `com.example.zonexplo` |
 | `APPLE_DISTRIBUTION_CERT_P12` | base64 of the .p12 from step 4 |
 | `APPLE_DISTRIBUTION_CERT_PASSWORD` | The password you set when exporting it |
 | `APP_STORE_CONNECT_KEY_ID` | Key ID from step 5 |
@@ -140,7 +140,7 @@ App Store Connect, not here.
 ## Things App Store Connect will ask about
 
 **Export compliance.** `ITSAppUsesNonExemptEncryption` is already `false` in
-`ios/project.yml`. GlidePath uses HTTPS and nothing else, which is exempt. Without
+`ios/project.yml`. Zonexplo uses HTTPS and nothing else, which is exempt. Without
 that key, every single build stops and waits for a human to answer a question.
 
 **Background location.** The app declares the `location` background mode and asks
@@ -152,7 +152,7 @@ this shape.
 
 **Background audio.** The `audio` background mode is there so a spoken warning is
 audible while another navigation app is on screen and the phone is locked. Say
-so plainly. Do not describe GlidePath as a media app.
+so plainly. Do not describe Zonexplo as a media app.
 
 **What to test.** Worth writing, because "watch it warn you about a camera"
 requires the tester to drive past one. Point them at a country with data, tell
@@ -166,7 +166,7 @@ when it is working.
 The workflow is the supported path, but the same thing by hand is:
 
 ```sh
-make archive      # builds ios/build/GlidePath.xcarchive
+make archive      # builds ios/build/Zonexplo.xcarchive
 make testflight   # exports that archive and uploads it
 ```
 

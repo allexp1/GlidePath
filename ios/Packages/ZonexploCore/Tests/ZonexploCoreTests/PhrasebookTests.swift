@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// Phrasing is product behaviour, not decoration: what the driver hears is the
 /// entire interface while the phone is in a pocket.

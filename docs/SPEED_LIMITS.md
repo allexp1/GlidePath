@@ -1,6 +1,6 @@
 # Posted speed limits
 
-Everything else in GlidePath answers "what is enforced *here*", at a camera or
+Everything else in Zonexplo answers "what is enforced *here*", at a camera or
 across an average-speed section. This answers the ordinary question in between:
 what does the sign on this road say, and am I over it.
 
@@ -65,7 +65,7 @@ at the one moment the driver most needs to hear one clear number.
 
 ## Which road am I on
 
-`RoadLimitMatcher`, in GlidePathCore.
+`RoadLimitMatcher`, in ZonexploCore.
 
 The naive version — nearest polyline wins — is wrong in exactly the places a
 driver notices. A motorway and its parallel service road are twenty metres

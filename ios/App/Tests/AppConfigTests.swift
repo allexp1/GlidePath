@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePath
+@testable import Zonexplo
 
 /// The config surface is the first thing anyone touches and was the least
 /// tested thing in the repo. These are the forms people actually type.

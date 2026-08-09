@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 final class CameraApproachTests: XCTestCase {
     private let cameraSite = TestFixtures.origin.offset(meters: 5_000, bearingDegrees: 90)

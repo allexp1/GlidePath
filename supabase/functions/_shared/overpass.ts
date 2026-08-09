@@ -207,7 +207,7 @@ export async function runOverpassQuery(
             'Content-Type': 'application/x-www-form-urlencoded',
             // Overpass asks for a contactable user agent so an operator can
             // reach whoever is hammering them.
-            'User-Agent': 'GlidePath/1.0 (+https://github.com/allexp1/glidepath)'
+            'User-Agent': 'Zonexplo/1.0 (+https://github.com/allexp1/zonexplo)'
           },
           body: new URLSearchParams({ data: query })
         })

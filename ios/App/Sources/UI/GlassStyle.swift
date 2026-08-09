@@ -14,14 +14,14 @@ import SwiftUI
 ///    tinted translucency over an arbitrary map is not a colour anyone can rely
 ///    on reading correctly at a glance.
 extension View {
-    /// The standard GlidePath surface: a glass panel with a continuous corner.
-    func glidePathGlass(
+    /// The standard Zonexplo surface: a glass panel with a continuous corner.
+    func zonexploGlass(
         cornerRadius: CGFloat = 28,
         tint: Color? = nil,
         interactive: Bool = false
     ) -> some View {
         modifier(
-            GlidePathGlassModifier(
+            ZonexploGlassModifier(
                 shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
                 tint: tint,
                 interactive: interactive
@@ -30,15 +30,15 @@ extension View {
     }
 
     /// A pill, for controls and small readouts.
-    func glidePathGlassCapsule(tint: Color? = nil, interactive: Bool = true) -> some View {
-        modifier(GlidePathGlassModifier(shape: Capsule(), tint: tint, interactive: interactive))
+    func zonexploGlassCapsule(tint: Color? = nil, interactive: Bool = true) -> some View {
+        modifier(ZonexploGlassModifier(shape: Capsule(), tint: tint, interactive: interactive))
     }
 }
 
 // InsettableShape rather than Shape: strokeBorder draws the line inside the
 // shape's bounds, which is what keeps the border from being clipped in half by
 // the shape's own edge. Every shape this is used with qualifies.
-private struct GlidePathGlassModifier<S: InsettableShape>: ViewModifier {
+private struct ZonexploGlassModifier<S: InsettableShape>: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     let shape: S

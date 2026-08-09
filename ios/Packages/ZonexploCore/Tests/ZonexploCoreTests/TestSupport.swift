@@ -1,5 +1,5 @@
 import Foundation
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// Synthetic geometry the tests share.
 ///

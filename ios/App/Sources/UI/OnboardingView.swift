@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The permission explainer.
 ///
-/// GlidePath asks for Always location, which is the single most refused
+/// Zonexplo asks for Always location, which is the single most refused
 /// permission on iOS and rightly so. The system prompt gives one line to
 /// justify it, and one line is not enough, so the case is made here first and
 /// the prompt is only raised once the driver has read it.
@@ -28,7 +28,7 @@ struct OnboardingView: View {
             Spacer()
             content
                 .padding(28)
-                .glidePathGlass(cornerRadius: 34)
+                .zonexploGlass(cornerRadius: 34)
                 .padding(.horizontal, 20)
             Spacer()
             footer
@@ -47,7 +47,7 @@ struct OnboardingView: View {
                 symbol: "gauge.with.needle",
                 title: "A co-pilot, not a navigator",
                 body: """
-                    Keep using Waze or Google Maps. GlidePath runs quietly behind them and \
+                    Keep using Waze or Google Maps. Zonexplo runs quietly behind them and \
                     speaks up about cameras.
 
                     In an average speed zone it works out the exact speed to hold so you \
@@ -73,7 +73,7 @@ struct OnboardingView: View {
                 symbol: "moon.zzz.fill",
                 title: "And while your screen is off",
                 body: """
-                    You will be looking at your navigation app, not at GlidePath, so it has to \
+                    You will be looking at your navigation app, not at Zonexplo, so it has to \
                     keep working in the background. That is what "Always" allows.
 
                     It stays in a low power mode almost all the time and only switches on \

@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// Every test here is about *not* speaking. The detection is arithmetic; the
 /// product is the silence around it.

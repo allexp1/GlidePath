@@ -1,9 +1,9 @@
 import Foundation
-import GlidePathCore
+import ZonexploCore
 
 /// A very small PostgREST client.
 ///
-/// Deliberately not the supabase-swift SDK. GlidePath makes exactly four kinds
+/// Deliberately not the supabase-swift SDK. Zonexplo makes exactly four kinds
 /// of request, all of them anonymous reads against views, and the whole surface
 /// fits on two screens. A dependency here would be more code to audit than the
 /// code it replaced, and this way the offline path has no third-party failure

@@ -1,5 +1,5 @@
 /**
- * Turning OpenStreetMap tags into GlidePath rows.
+ * Turning OpenStreetMap tags into Zonexplo rows.
  *
  * OSM tagging is a convention, not a schema. The same camera can be a
  * `highway=speed_camera` node, a `man_made=surveillance` node, a `device`

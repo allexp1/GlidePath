@@ -1,11 +1,11 @@
-# GlidePath - developer entry points.
+# Zonexplo - developer entry points.
 #
 # Quick start on a fresh clone:
 #
 #     cp Config.example.xcconfig Config.xcconfig   # paste Supabase keys + Team ID
 #     cp supabase/.env.example supabase/.env       # paste service role key
 #     make seed                                    # push schema + load camera data
-#     make project && open ios/GlidePath.xcodeproj
+#     make project && open ios/Zonexplo.xcodeproj
 #
 # `make help` lists every target.
 
@@ -13,9 +13,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 IOS_DIR      := ios
-CORE_DIR     := $(IOS_DIR)/Packages/GlidePathCore
-PROJECT      := $(IOS_DIR)/GlidePath.xcodeproj
-SCHEME       := GlidePath
+CORE_DIR     := $(IOS_DIR)/Packages/ZonexploCore
+PROJECT      := $(IOS_DIR)/Zonexplo.xcodeproj
+SCHEME       := Zonexplo
 DESTINATION  ?= platform=iOS Simulator,name=iPhone 17 Pro
 
 # xcbeautify makes an xcodebuild log readable, and is optional on purpose:
@@ -220,7 +220,7 @@ format: ## Autocorrect what SwiftLint can fix
 # the same thing by hand, for when you want to watch it happen. Either way the
 # one-time setup is in docs/TESTFLIGHT.md.
 
-ARCHIVE ?= ios/build/GlidePath.xcarchive
+ARCHIVE ?= ios/build/Zonexplo.xcarchive
 
 .PHONY: icon
 icon: ## Regenerate the placeholder app icon

@@ -1,10 +1,10 @@
-import GlidePathCore
+import ZonexploCore
 import MapKit
 import SwiftUI
 
 /// The home screen: a map you are not meant to look at.
 ///
-/// GlidePath is not a navigator and must not compete with one. The map exists
+/// Zonexplo is not a navigator and must not compete with one. The map exists
 /// to answer one question, "is it actually watching?", and to make the camera
 /// data tangible enough to trust. The moment a zone starts, the live card takes
 /// over the screen and the map becomes background texture.
@@ -12,7 +12,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
 
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
-    @State private var selectedCamera: GlidePathCore.Camera?
+    @State private var selectedCamera: ZonexploCore.Camera?
 
     private var monitor: DriveMonitor? { model.monitor }
 
@@ -89,7 +89,7 @@ struct HomeView: View {
                 } label: {
                     controlIcon("location.fill")
                 }
-                .glidePathGlassCapsule()
+                .zonexploGlassCapsule()
                 .accessibilityLabel("Centre the map on my location")
 
                 NavigationLink {
@@ -97,7 +97,7 @@ struct HomeView: View {
                 } label: {
                     controlIcon("gearshape.fill")
                 }
-                .glidePathGlassCapsule()
+                .zonexploGlassCapsule()
                 .accessibilityLabel("Settings")
             }
         }
@@ -185,7 +185,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity)
             }
             .padding(20)
-            .glidePathGlass(cornerRadius: 30)
+            .zonexploGlass(cornerRadius: 30)
         }
     }
 
@@ -223,7 +223,7 @@ struct HomeView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glidePathGlass(cornerRadius: 18)
+        .zonexploGlass(cornerRadius: 18)
     }
 }
 
@@ -269,7 +269,7 @@ struct SpeedLimitRoundel: View {
                     .foregroundStyle(isOver ? .red : .primary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3)
-                    .glidePathGlass(cornerRadius: 11)
+                    .zonexploGlass(cornerRadius: 11)
             }
         }
         .accessibilityElement(children: .ignore)

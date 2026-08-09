@@ -1,5 +1,5 @@
 import CoreLocation
-import GlidePathCore
+import ZonexploCore
 import MapKit
 import SwiftUI
 
@@ -11,7 +11,7 @@ import SwiftUI
 /// unsure about, which is why `verified` gets a plain-English explanation rather
 /// than being hidden.
 struct CameraDetailSheet: View {
-    let camera: GlidePathCore.Camera
+    let camera: ZonexploCore.Camera
     let units: DistanceUnits
 
     /// Where the driver is, when known, so the sheet can say how far away it is.
@@ -96,7 +96,7 @@ struct CameraDetailSheet: View {
             )
         }
         .padding(4)
-        .glidePathGlass(cornerRadius: 20)
+        .zonexploGlass(cornerRadius: 20)
     }
 
     private var divider: some View {
@@ -128,7 +128,7 @@ struct CameraDetailSheet: View {
         Label {
             Text(
                 "This camera has disappeared from the map data it came from. It may have been "
-                    + "removed, or the change upstream may simply be wrong, so GlidePath keeps "
+                    + "removed, or the change upstream may simply be wrong, so Zonexplo keeps "
                     + "warning about it and shows it faded rather than dropping it."
             )
             .font(.footnote)
@@ -137,7 +137,7 @@ struct CameraDetailSheet: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glidePathGlass(cornerRadius: 18, tint: .orange)
+        .zonexploGlass(cornerRadius: 18, tint: .orange)
     }
 
     private var openInMaps: some View {

@@ -1,5 +1,5 @@
 import Foundation
-import GlidePathCore
+import ZonexploCore
 
 /// How the phone indexes hundreds of thousands of speed limits so it can find
 /// the handful under the car in a millisecond.

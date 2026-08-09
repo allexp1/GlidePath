@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 final class CoachingTierTests: XCTestCase {
     private let engine = CoachingEngine(policy: .standard)
@@ -92,7 +92,7 @@ final class CoachingTierTests: XCTestCase {
     }
 
     /// The hard safety rule, swept across the whole space rather than spot
-    /// checked. GlidePath must never ask for a dangerous crawl, no matter how
+    /// checked. Zonexplo must never ask for a dangerous crawl, no matter how
     /// badly the driver has blown the budget.
     func testNoAdviceIsEverBelowTheSafetyFloor() {
         for limit in [30.0, 50, 70, 80, 90, 100, 110, 130] {

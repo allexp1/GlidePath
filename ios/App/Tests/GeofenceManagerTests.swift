@@ -1,7 +1,7 @@
 import CoreLocation
-import GlidePathCore
+import ZonexploCore
 import XCTest
-@testable import GlidePath
+@testable import Zonexplo
 
 /// The twenty-region cap is a hard Core Location limit and the 21st call fails
 /// silently, so getting the selection wrong produces an app that simply stops

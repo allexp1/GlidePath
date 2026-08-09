@@ -1,6 +1,6 @@
 import Foundation
 import GRDB
-import GlidePathCore
+import ZonexploCore
 
 /// The speed-limit half of `CountrySyncService`.
 ///

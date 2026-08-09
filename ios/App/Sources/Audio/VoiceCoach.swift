@@ -1,16 +1,16 @@
 import AVFoundation
 import Foundation
-import GlidePathCore
+import ZonexploCore
 import Observation
 
 /// The voice.
 ///
-/// GlidePath is designed to run behind a navigation app with the phone in a
+/// Zonexplo is designed to run behind a navigation app with the phone in a
 /// cradle or a pocket, so the audio session is the whole interface most of the
 /// time. Three things matter and everything here serves them:
 ///
 /// - **Duck, do not stop.** Music, podcasts and the navigator you are actually
-///   following keep playing, quieter, for the second and a half GlidePath needs.
+///   following keep playing, quieter, for the second and a half Zonexplo needs.
 /// - **Urgency preempts.** "Speed camera ahead" must not queue behind a
 ///   leisurely average-speed update.
 /// - **Deactivate afterwards.** Holding the session open keeps everything else
@@ -29,7 +29,7 @@ final class VoiceCoach: NSObject, CoachVoice {
 
         var volume: Double = 1.0
 
-        /// An `AVSpeechSynthesisVoice` identifier, or nil to let GlidePath pick
+        /// An `AVSpeechSynthesisVoice` identifier, or nil to let Zonexplo pick
         /// the best installed voice for the system language.
         ///
         /// Nil is the useful default and not the same as leaving the utterance
@@ -37,7 +37,7 @@ final class VoiceCoach: NSObject, CoachVoice {
         /// the worst voice on the phone. See `VoiceCatalogue`.
         var voiceIdentifier: String?
 
-        /// When true the silent switch silences GlidePath.
+        /// When true the silent switch silences Zonexplo.
         ///
         /// Off by default, matching every navigation app: a driver who has
         /// muted their phone for a meeting still wants to be told about the
@@ -78,7 +78,7 @@ final class VoiceCoach: NSObject, CoachVoice {
     /// Re-reads the installed voices.
     ///
     /// Called when the settings screen appears, because the driver can install
-    /// a voice in iOS Settings while GlidePath is in the background and a list
+    /// a voice in iOS Settings while Zonexplo is in the background and a list
     /// that only changes on relaunch is how a download appears to have failed.
     func refreshVoices() {
         availableVoices = VoiceCatalogue.installed
@@ -167,7 +167,7 @@ final class VoiceCoach: NSObject, CoachVoice {
         } catch {
             // Losing the session means losing the voice, not the app. The UI
             // still shows live numbers, so failing quietly is right here.
-            print("[GlidePath] could not activate the audio session: \(error.localizedDescription)")
+            print("[Zonexplo] could not activate the audio session: \(error.localizedDescription)")
         }
     }
 
@@ -183,7 +183,7 @@ final class VoiceCoach: NSObject, CoachVoice {
             )
             isSessionActive = false
         } catch {
-            print("[GlidePath] could not release the audio session: \(error.localizedDescription)")
+            print("[Zonexplo] could not release the audio session: \(error.localizedDescription)")
         }
     }
 }

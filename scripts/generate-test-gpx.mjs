@@ -84,9 +84,9 @@ const trkpts = points
   .join('\n')
 
 const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="GlidePath scripts/generate-test-gpx.mjs" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Zonexplo scripts/generate-test-gpx.mjs" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
-    <name>GlidePath test zone drive</name>
+    <name>Zonexplo test zone drive</name>
     <desc>6 km eastbound section, 90 km/h limit. 3 km at 120 then 3 km at 70.</desc>
   </metadata>
   <trk>
@@ -104,9 +104,9 @@ const target = join(
   '..',
   'ios',
   'Packages',
-  'GlidePathCore',
+  'ZonexploCore',
   'Tests',
-  'GlidePathCoreTests',
+  'ZonexploCoreTests',
   'Fixtures',
   'test_zone_drive.gpx'
 )

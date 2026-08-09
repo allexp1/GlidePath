@@ -1,4 +1,4 @@
-import GlidePathCore
+import ZonexploCore
 import SwiftUI
 
 /// The download manager, across every country there is.

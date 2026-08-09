@@ -1,4 +1,4 @@
-import GlidePathCore
+import ZonexploCore
 import SwiftUI
 import UIKit
 
@@ -34,7 +34,7 @@ struct SettingsView: View {
                 }
                 .disabled(!model.settings.voiceEnabled)
 
-                Toggle("Silent switch mutes GlidePath", isOn: $model.settings.respectSilentSwitch)
+                Toggle("Silent switch mutes Zonexplo", isOn: $model.settings.respectSilentSwitch)
             } header: {
                 Text("Voice")
             } footer: {
@@ -121,7 +121,7 @@ struct SettingsView: View {
                 LabeledContent("Version", value: version)
             } footer: {
                 Text(
-                    "GlidePath is a speed awareness aid, not a navigator, and not a substitute "
+                    "Zonexplo is a speed awareness aid, not a navigator, and not a substitute "
                         + "for the signs. Camera data comes from OpenStreetMap contributors and "
                         + "published enforcement announcements, and it will sometimes be wrong. "
                         + "The limit on the sign is always the limit."
@@ -129,7 +129,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        // A voice can be installed in iOS Settings while GlidePath sits in the
+        // A voice can be installed in iOS Settings while Zonexplo sits in the
         // background, and a picker that only grows on relaunch is how that
         // download appears to have failed.
         .task {
@@ -154,10 +154,10 @@ struct SettingsView: View {
     }
 
     private var voiceFooter: String {
-        let ducking = "GlidePath ducks whatever you are listening to for a second or two, "
+        let ducking = "Zonexplo ducks whatever you are listening to for a second or two, "
             + "then hands the audio back. It never takes over playback."
 
-        // The compact voice is the robotic one, and nothing in GlidePath can
+        // The compact voice is the robotic one, and nothing in Zonexplo can
         // install a better one - only iOS can. Saying where is the whole point
         // of the hint; without it the driver concludes this is how the app
         // sounds.
@@ -167,7 +167,7 @@ struct SettingsView: View {
         ) else {
             return ducking
                 + "\n\nOnly the basic voice is installed. iOS Settings > Accessibility > "
-                + "Spoken Content > Voices has better ones to download, and GlidePath "
+                + "Spoken Content > Voices has better ones to download, and Zonexplo "
                 + "will use the best it finds."
         }
         return ducking

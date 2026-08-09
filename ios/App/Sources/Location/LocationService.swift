@@ -1,6 +1,6 @@
 import CoreLocation
 import Foundation
-import GlidePathCore
+import ZonexploCore
 import Observation
 
 /// Everything that touches CoreLocation.
@@ -243,7 +243,7 @@ final class LocationService: NSObject {
     /// Uses the classic region-monitoring API rather than CLMonitor. It is
     /// formally deprecated but fully functional, and it is the path with the
     /// longest track record of relaunching a terminated app into the
-    /// background, which is the behaviour GlidePath actually depends on.
+    /// background, which is the behaviour Zonexplo actually depends on.
     /// Migrating to CLMonitor is tracked in the README.
     func replaceMonitoredRegions(with regions: [CLCircularRegion]) {
         let wanted = Dictionary(regions.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
@@ -398,7 +398,7 @@ extension LocationService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // A transient failure is normal in a tunnel or a car park. The engine
         // already drops unusable fixes, so there is nothing to do but log.
-        print("[GlidePath] location error: \(error.localizedDescription)")
+        print("[Zonexplo] location error: \(error.localizedDescription)")
     }
 
     nonisolated func locationManager(
@@ -407,6 +407,6 @@ extension LocationService: CLLocationManagerDelegate {
         withError error: Error
     ) {
         let identifier = region?.identifier ?? "unknown"
-        print("[GlidePath] region monitoring failed for \(identifier): \(error.localizedDescription)")
+        print("[Zonexplo] region monitoring failed for \(identifier): \(error.localizedDescription)")
     }
 }

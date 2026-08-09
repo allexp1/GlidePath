@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// How talkative the app is, pinned down. These are product decisions as much
 /// as code, which is exactly why they are tested.

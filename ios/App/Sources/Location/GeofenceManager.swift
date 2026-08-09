@@ -1,6 +1,6 @@
 import CoreLocation
 import Foundation
-import GlidePathCore
+import ZonexploCore
 
 /// Chooses which twenty places on earth the phone is allowed to watch.
 ///

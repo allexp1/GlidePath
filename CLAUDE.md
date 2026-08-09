@@ -1,4 +1,4 @@
-# GlidePath — working notes
+# Zonexplo — working notes
 
 Context for anyone (human or agent) picking this up cold. The docs under `docs/`
 explain how the product works and why; this file is about the state of the thing
@@ -23,14 +23,14 @@ camera catalogue, Deno Edge Functions for the harvesting jobs.
 ```
 ios/project.yml              XcodeGen manifest — the real build config
 ios/App/                     the app target
-ios/Packages/GlidePathCore/  the engine, as an SPM package: pure, testable, no UI
+ios/Packages/ZonexploCore/  the engine, as an SPM package: pure, testable, no UI
 supabase/migrations/         schema
 supabase/functions/          Edge Functions (Deno)
 supabase/seed/               the seed CLI (Deno)
 scripts/generate-app-icon.py the placeholder icon generator
 ```
 
-**`ios/GlidePath.xcodeproj` is generated and gitignored.** Anything you change
+**`ios/Zonexplo.xcodeproj` is generated and gitignored.** Anything you change
 through Xcode's build-settings UI is destroyed by the next `make project`. Edit
 `ios/project.yml` instead. This is the single most common way to lose an hour
 here.
@@ -51,7 +51,7 @@ entirely. Every one of these has cost someone real time:
 | 15× `unable to resolve module dependency` | Terminal running under Rosetta: app builds x86_64, packages build arm64 |
 | `module file is incompatible with this Swift compiler` | stale DerivedData |
 | `failed to unlink '.../ä'` cloning GRDB | `git config --global core.precomposeunicode true` not set |
-| `Missing package product 'GlidePathCore'` | packages not resolved yet, or an iCloud-evicted `Package.swift` |
+| `Missing package product 'ZonexploCore'` | packages not resolved yet, or an iCloud-evicted `Package.swift` |
 | `RPC failed; curl 56` cloning GRDB | large repo over a flaky link — `git config --global http.version HTTP/1.1`, or clone it once by hand with `--filter=blob:none` and point `project.yml` at the local path |
 
 None of those name their cause in the error text, which is why `doctor` exists.
@@ -60,7 +60,7 @@ None of those name their cause in the error text, which is why `doctor` exists.
 
 ## Backend state
 
-Supabase project **GlidePath**, ref `mesvkrfvbqrboouwwzlt`, eu-central-1.
+Supabase project **Zonexplo**, ref `mesvkrfvbqrboouwwzlt`, eu-central-1.
 
 Data as of the last session:
 

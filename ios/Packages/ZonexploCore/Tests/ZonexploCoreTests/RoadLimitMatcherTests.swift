@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// The cases that decide whether "the limit on this road" is a useful number or
 /// a flickering one. Every test here is a shape of road that actually exists.

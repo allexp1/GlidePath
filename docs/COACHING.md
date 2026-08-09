@@ -1,6 +1,6 @@
 # The coaching engine
 
-Everything here lives in `ios/Packages/GlidePathCore` and is covered by
+Everything here lives in `ios/Packages/ZonexploCore` and is covered by
 `swift test`. If you change a number in this document, change it in
 `SafetyPolicy` and in the tests too.
 

@@ -1,4 +1,4 @@
-// GlidePath build configuration.
+// Zonexplo build configuration.
 //
 // SETUP: copy this file to Config.xcconfig and fill in the four values below.
 //
@@ -37,7 +37,7 @@ DEVELOPMENT_TEAM = YOUR-TEAM-ID
 
 // Reverse-DNS bundle identifier. Must be unique across the App Store, so
 // change this to something you own before you try to run on a device.
-PRODUCT_BUNDLE_IDENTIFIER = ai.glidepath.app
+PRODUCT_BUNDLE_IDENTIFIER = ai.zonexplo.app
 
 // ---------------------------------------------------------------------------
 // Signing - leave as-is for normal development

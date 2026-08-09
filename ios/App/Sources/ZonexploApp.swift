@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct GlidePathApp: App {
+struct ZonexploApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 

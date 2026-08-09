@@ -1,10 +1,10 @@
 included:
   - ios/App/Sources
-  - ios/Packages/GlidePathCore/Sources
-  - ios/Packages/GlidePathCore/Tests
+  - ios/Packages/ZonexploCore/Sources
+  - ios/Packages/ZonexploCore/Tests
 
 excluded:
-  - ios/Packages/GlidePathCore/.build
+  - ios/Packages/ZonexploCore/.build
   - .build
 
 disabled_rules:

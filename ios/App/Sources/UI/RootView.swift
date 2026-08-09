@@ -15,7 +15,7 @@ struct RootView: View {
 
             case let .failed(message):
                 ContentUnavailableView(
-                    "GlidePath could not start",
+                    "Zonexplo could not start",
                     systemImage: "exclamationmark.triangle",
                     description: Text(message)
                 )
@@ -78,7 +78,7 @@ struct RootView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glidePathGlass(cornerRadius: 14)
+                    .zonexploGlass(cornerRadius: 14)
                 }
             }
             .padding(24)

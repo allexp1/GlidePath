@@ -25,7 +25,7 @@ struct VoiceOption: Equatable, Identifiable, Sendable {
     let quality: Quality
 }
 
-/// Which of the installed voices GlidePath should speak with.
+/// Which of the installed voices Zonexplo should speak with.
 ///
 /// An `AVSpeechUtterance` with no voice set gets the compact one, and the
 /// compact voice is the robotic voice everybody recognises. It is not what the
@@ -34,7 +34,7 @@ struct VoiceOption: Equatable, Identifiable, Sendable {
 /// thing that costs nothing at runtime once installed. Taking the default is
 /// therefore choosing the worst voice on the device by omission.
 ///
-/// So GlidePath asks for the best installed voice instead, and lets the driver
+/// So Zonexplo asks for the best installed voice instead, and lets the driver
 /// override it. Three families are excluded before anything is offered, each
 /// for a reason that only shows up in the field - see `selectable`.
 enum VoiceCatalogue {
@@ -118,14 +118,14 @@ extension VoiceCatalogue {
     /// Every usable voice this phone currently has, best first.
     ///
     /// Not cached here: the driver can install a voice in iOS Settings while
-    /// GlidePath is in the background, and a list that cannot change until the
+    /// Zonexplo is in the background, and a list that cannot change until the
     /// next launch is how a download appears to have failed. `VoiceCoach` holds
     /// the snapshot and refreshes it when the settings screen appears.
     static var installed: [VoiceOption] {
         selectable(from: AVSpeechSynthesisVoice.speechVoices().map(VoiceOption.init))
     }
 
-    /// The language GlidePath's phrases are actually written in, with the
+    /// The language Zonexplo's phrases are actually written in, with the
     /// driver's region attached so the accent follows the phone.
     ///
     /// Deliberately not `AVSpeechSynthesisVoice.currentLanguageCode()`, which

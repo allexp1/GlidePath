@@ -88,7 +88,7 @@ jobs:
           CERT: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
         run: |
-          KEYCHAIN="$RUNNER_TEMP/glidepath-signing.keychain-db"
+          KEYCHAIN="$RUNNER_TEMP/zonexplo-signing.keychain-db"
           KEYCHAIN_PASSWORD=$(uuidgen)
           echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
@@ -195,7 +195,7 @@ jobs:
       # The engine tests are seconds and need no simulator. Shipping a build to
       # testers without them having run is not worth the time saved.
       - name: Run the engine tests
-        working-directory: ios/Packages/GlidePathCore
+        working-directory: ios/Packages/ZonexploCore
         run: swift test
 
       - name: Archive
@@ -204,11 +204,11 @@ jobs:
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           xcodebuild archive \
-            -project ios/GlidePath.xcodeproj \
-            -scheme GlidePath \
+            -project ios/Zonexplo.xcodeproj \
+            -scheme Zonexplo \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Zonexplo.xcarchive" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$KEY_ID" \
@@ -246,7 +246,7 @@ jobs:
           EOF
 
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Zonexplo.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \

@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePath
+@testable import Zonexplo
 
 /// Choosing a voice is the difference between the app sounding like a satnav
 /// and sounding like a 1990s answering machine, and every rule below exists

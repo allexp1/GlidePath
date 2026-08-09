@@ -4,7 +4,7 @@
 # Reset schema:  supabase db reset
 # Push to cloud: supabase link --project-ref YOUR-REF && supabase db push
 
-project_id = "glidepath"
+project_id = "zonexplo"
 
 [api]
 enabled = true
@@ -32,8 +32,8 @@ enabled = false
 
 [auth]
 enabled = true
-site_url = "glidepath://auth"
-additional_redirect_urls = ["glidepath://auth"]
+site_url = "zonexplo://auth"
+additional_redirect_urls = ["zonexplo://auth"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 # Community reports need an identity to attribute to, but making drivers think

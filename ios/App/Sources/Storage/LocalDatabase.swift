@@ -1,10 +1,10 @@
 import Foundation
 import GRDB
-import GlidePathCore
+import ZonexploCore
 
 /// The offline copy of every downloaded country.
 ///
-/// GlidePath has to work with no signal, because the roads where it matters most
+/// Zonexplo has to work with no signal, because the roads where it matters most
 /// are the ones without any. Nothing on the driving path ever touches the
 /// network: a fix goes to this database and back, and the only time Supabase is
 /// involved is a download or a delta sync at launch.
@@ -40,9 +40,9 @@ final class LocalDatabase: @unchecked Sendable {
             appropriateFor: nil,
             create: true
         )
-        let folder = directory.appendingPathComponent("GlidePath", isDirectory: true)
+        let folder = directory.appendingPathComponent("Zonexplo", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("glidepath.sqlite")
+        return folder.appendingPathComponent("zonexplo.sqlite")
     }
 
     // MARK: - Schema

@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePath
+@testable import Zonexplo
 
 /// The flags are computed from the country code rather than stored, which is the
 /// right call - a stored table of 243 emoji is a table that can drift - but it

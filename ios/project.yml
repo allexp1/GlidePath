@@ -2,10 +2,10 @@
 #
 #     cd ios && xcodegen generate      (or: make project from the repo root)
 
-name: GlidePath
+name: Zonexplo
 
 options:
-  bundleIdPrefix: ai.glidepath
+  bundleIdPrefix: ai.zonexplo
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -34,14 +34,14 @@ configFiles:
   Release: ../Config.xcconfig
 
 packages:
-  GlidePathCore:
-    path: Packages/GlidePathCore
+  ZonexploCore:
+    path: Packages/ZonexploCore
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: "7.0.0"
 
 targets:
-  GlidePath:
+  Zonexplo:
     type: application
     platform: iOS
     deploymentTarget: "26.0"
@@ -52,14 +52,14 @@ targets:
         buildPhase: resources
 
     dependencies:
-      - package: GlidePathCore
-        product: GlidePathCore
+      - package: ZonexploCore
+        product: ZonexploCore
       - package: GRDB
         product: GRDB
 
     settings:
       base:
-        PRODUCT_NAME: GlidePath
+        PRODUCT_NAME: Zonexplo
         PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER)
         DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
         CODE_SIGN_STYLE: $(CODE_SIGN_STYLE)
@@ -87,7 +87,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: GlidePath
+        CFBundleDisplayName: Zonexplo
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -115,17 +115,17 @@ targets:
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
 
         # "Always" is required so a zone geofence can wake the app when the
-        # phone is locked and GlidePath is not on screen. OnboardingView
+        # phone is locked and Zonexplo is not on screen. OnboardingView
         # explains this before the system prompt is ever shown.
         NSLocationWhenInUseUsageDescription:
-          GlidePath uses your location to warn you about speed cameras on the road ahead.
+          Zonexplo uses your location to warn you about speed cameras on the road ahead.
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          GlidePath needs background location so it can warn you about a speed camera
+          Zonexplo needs background location so it can warn you about a speed camera
           even when your phone is locked and another navigation app is on screen.
           Your location never leaves your phone.
         NSLocationTemporaryUsageDescriptionDictionary:
           ZonePrecision:
-            GlidePath switches to precise location only while you are inside an
+            Zonexplo switches to precise location only while you are inside an
             average-speed camera zone, so it can tell you the exact speed to hold.
 
         UIBackgroundModes:
@@ -147,32 +147,32 @@ targets:
 
         ITSAppUsesNonExemptEncryption: false
 
-  GlidePathTests:
+  ZonexploTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget: "26.0"
     sources:
       - path: App/Tests
     dependencies:
-      - target: GlidePath
-      - package: GlidePathCore
-        product: GlidePathCore
+      - target: Zonexplo
+      - package: ZonexploCore
+        product: ZonexploCore
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  GlidePath:
+  Zonexplo:
     build:
       targets:
-        GlidePath: all
-        GlidePathTests: [test]
+        Zonexplo: all
+        ZonexploTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       gatherCoverageData: true
       targets:
-        - GlidePathTests
+        - ZonexploTests
     archive:
       config: Release

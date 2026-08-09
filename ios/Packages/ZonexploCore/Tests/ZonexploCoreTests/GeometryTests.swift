@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 final class GeometryTests: XCTestCase {
     func testDistanceBetweenKnownPoints() {

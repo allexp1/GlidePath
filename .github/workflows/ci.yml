@@ -29,15 +29,15 @@ jobs:
           swift --version
 
       - name: Run tests
-        working-directory: ios/Packages/GlidePathCore
+        working-directory: ios/Packages/ZonexploCore
         run: swift test --enable-code-coverage
 
       - name: Check the GPX fixture is up to date
         run: |
           node scripts/generate-test-gpx.mjs
-          if ! git diff --quiet -- ios/Packages/GlidePathCore/Tests/GlidePathCoreTests/Fixtures; then
+          if ! git diff --quiet -- ios/Packages/ZonexploCore/Tests/ZonexploCoreTests/Fixtures; then
             echo "::error::The GPX fixture is out of sync with scripts/generate-test-gpx.mjs."
-            git --no-pager diff --stat -- ios/Packages/GlidePathCore/Tests/GlidePathCoreTests/Fixtures
+            git --no-pager diff --stat -- ios/Packages/ZonexploCore/Tests/ZonexploCoreTests/Fixtures
             exit 1
           fi
 
@@ -94,8 +94,8 @@ jobs:
       - name: Build and test
         run: |
           xcodebuild test \
-            -project ios/GlidePath.xcodeproj \
-            -scheme GlidePath \
+            -project ios/Zonexplo.xcodeproj \
+            -scheme Zonexplo \
             -destination "id=${{ steps.simulator.outputs.udid }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -135,11 +135,11 @@ jobs:
       - name: Archive
         run: |
           xcodebuild archive \
-            -project ios/GlidePath.xcodeproj \
-            -scheme GlidePath \
+            -project ios/Zonexplo.xcodeproj \
+            -scheme Zonexplo \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/GlidePath.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Zonexplo.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -147,7 +147,7 @@ jobs:
 
       - name: The archive must pass the checks App Store Connect makes
         run: |
-          APP="$RUNNER_TEMP/GlidePath.xcarchive/Products/Applications/GlidePath.app"
+          APP="$RUNNER_TEMP/Zonexplo.xcarchive/Products/Applications/Zonexplo.app"
           PLIST="$APP/Info.plist"
 
           if [ ! -d "$APP" ]; then

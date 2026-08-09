@@ -27,7 +27,7 @@ and phone cameras, which are newer and inconsistently tagged.
 `enforcement` may be a semicolon-separated list, which is how a gantry doing
 speed and red light at once is tagged.
 
-| GlidePath type | Recognised from |
+| Zonexplo type | Recognised from |
 | --- | --- |
 | `mobile_hotspot` | `speed_camera=mobile`, `speed_trap=yes`, `enforcement=mobile_speed` |
 | `seatbelt_phone` | `enforcement` containing `seatbelt`, `mobile_phone`, `handheld`, `distracted_driving` |

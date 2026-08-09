@@ -1,4 +1,4 @@
-import GlidePathCore
+import ZonexploCore
 import SwiftUI
 
 /// The in-zone display: one enormous number and three supporting figures.
@@ -46,7 +46,7 @@ struct ZoneLiveCard: View {
             }
             .padding(24)
             .frame(maxWidth: .infinity)
-            .glidePathGlass(cornerRadius: 32, tint: TierPalette.tint(for: appearance))
+            .zonexploGlass(cornerRadius: 32, tint: TierPalette.tint(for: appearance))
             .glassEffectID("zone-card", in: glassNamespace)
         }
         .animation(.smooth(duration: 0.35), value: advice.tier)
@@ -157,7 +157,7 @@ struct ZoneLiveCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .glidePathGlass(cornerRadius: 16)
+        .zonexploGlass(cornerRadius: 16)
     }
 
     private func recoveryNote(seconds: TimeInterval, stop: RestStop, distance: Double) -> some View {
@@ -172,7 +172,7 @@ struct ZoneLiveCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glidePathGlass(cornerRadius: 18, tint: .orange)
+        .zonexploGlass(cornerRadius: 18, tint: .orange)
     }
 
     private var unrecoverableNote: some View {
@@ -184,7 +184,7 @@ struct ZoneLiveCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glidePathGlass(cornerRadius: 18, tint: .red)
+        .zonexploGlass(cornerRadius: 18, tint: .red)
     }
 
     private var accessibilitySummary: String {

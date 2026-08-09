@@ -30,7 +30,7 @@ the phone.
                           (promoted by a human)          happens while driving
 ```
 
-### GlidePathCore
+### ZonexploCore
 
 A pure Swift package. No UI, no dependencies, no CoreLocation, no Foundation
 beyond value types and dates.

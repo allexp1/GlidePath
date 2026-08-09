@@ -1,6 +1,6 @@
 import CoreLocation
 import Foundation
-import GlidePathCore
+import ZonexploCore
 import Observation
 
 /// Where the app gets its camera data. Implemented by the local database, so
@@ -24,7 +24,7 @@ protocol CoachVoice: AnyObject {
 /// It owns the loop: watch geofences cheaply, wake into precise tracking when a
 /// zone is near, hand fixes to the engine, say what the engine decides, and drop
 /// back to cheap watching when the zone is done. Every decision about *what* to
-/// say lives in GlidePathCore; this is the plumbing that makes it happen at the
+/// say lives in ZonexploCore; this is the plumbing that makes it happen at the
 /// right moment with the right power budget.
 @MainActor
 @Observable

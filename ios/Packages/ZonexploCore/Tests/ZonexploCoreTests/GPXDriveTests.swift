@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// Replays a recorded track through the engine, which is the closest thing to a
 /// real drive that runs in CI. Regenerate the fixture with

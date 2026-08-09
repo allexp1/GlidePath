@@ -1,5 +1,5 @@
 import Foundation
-import GlidePathCore
+import ZonexploCore
 import Observation
 import SwiftUI
 
@@ -123,7 +123,7 @@ struct AppSettings: Equatable {
     var respectSilentSwitch: Bool
 
     /// The chosen `AVSpeechSynthesisVoice` identifier, or nil for "let
-    /// GlidePath pick the best installed one", which is the default.
+    /// Zonexplo pick the best installed one", which is the default.
     var voiceIdentifier: String?
 
     var hasSeenOnboarding: Bool

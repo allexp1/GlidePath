@@ -1,5 +1,5 @@
 import XCTest
-@testable import GlidePathCore
+@testable import ZonexploCore
 
 /// The allowance is the whole product in one equation. These tests pin down its
 /// behaviour with numbers worked out by hand.

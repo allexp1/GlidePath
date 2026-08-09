@@ -1,6 +1,6 @@
 import Foundation
 import GRDB
-import GlidePathCore
+import ZonexploCore
 import Observation
 
 /// Downloads countries and keeps them current.

@@ -1,10 +1,10 @@
-# GlidePath
+# Zonexplo
 
-[![CI](https://github.com/allexp1/GlidePath/actions/workflows/ci.yml/badge.svg)](https://github.com/allexp1/GlidePath/actions/workflows/ci.yml)
+[![CI](https://github.com/allexp1/Zonexplo/actions/workflows/ci.yml/badge.svg)](https://github.com/allexp1/Zonexplo/actions/workflows/ci.yml)
 
 A background co-pilot for speed cameras. Not a navigator.
 
-You keep using Waze or Google Maps. GlidePath runs quietly behind them and
+You keep using Waze or Google Maps. Zonexplo runs quietly behind them and
 speaks up about cameras. Inside an average-speed enforcement zone it works out
 continuously what speed you need to hold to come out under the limit at the exit
 camera, and tells you: *"hold 80 for the next 4 kilometres."*
@@ -21,8 +21,8 @@ run average-speed enforcement long enough for the sections to be properly mapped
 Four commands and two keys.
 
 ```sh
-git clone https://github.com/allexp1/glidepath.git
-cd glidepath
+git clone https://github.com/allexp1/zonexplo.git
+cd zonexplo
 
 cp Config.example.xcconfig Config.xcconfig   # paste SUPABASE_URL, SUPABASE_ANON_KEY, DEVELOPMENT_TEAM
 cp supabase/.env.example supabase/.env       # paste SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -32,7 +32,7 @@ make link                                    # once, so migrations know where to
 make seed                                    # apply migrations, pull camera data
 make project                                 # generate the Xcode project
 
-open ios/GlidePath.xcodeproj
+open ios/Zonexplo.xcodeproj
 ```
 
 `make link` asks for your project ref, which is the last path component of your
@@ -77,7 +77,7 @@ failures that report something other than their cause:
 | a dozen `unable to resolve module dependency` | the shell is under Rosetta, so the app builds x86_64 while the packages build arm64 |
 | `module file is incompatible with this Swift compiler` | stale DerivedData |
 | `failed to unlink '.../ä'` fetching GRDB | `core.precomposeunicode` unset; macOS stores filenames decomposed and git expects them precomposed |
-| `Missing package product 'GlidePathCore'` | packages not resolved since the last `make project`, or an iCloud-evicted `Package.swift` |
+| `Missing package product 'ZonexploCore'` | packages not resolved since the last `make project`, or an iCloud-evicted `Package.swift` |
 | `RPC failed; curl 56` fetching GRDB | a large clone over an unstable link |
 
 `doctor` names the cause and the command that fixes it. For the last one, set
@@ -167,7 +167,7 @@ gone further than you had.
 | **Tight** | Below the limit but above the safety floor | "Hold 80 for the next 4 kilometres." |
 | **Impossible** | Below the safety floor | "You cannot make this one by driving. There is a services in 1 kilometre. A stop of 2 minutes puts you back under." |
 
-**The safety floor is a hard rule, not a setting.** GlidePath will never coach a
+**The safety floor is a hard rule, not a setting.** Zonexplo will never coach a
 speed below the strictest of: an absolute 30 km/h floor, half the posted limit,
 and any posted legal minimum. On a 110 km/h road that is 55. A naive
 implementation of this product will cheerfully tell someone to do 18 km/h in the
@@ -257,7 +257,7 @@ rest: why nearest-polyline is the wrong match, and what buys the silence.
 ios/
   project.yml                    XcodeGen manifest; the .xcodeproj is generated, never committed
   App/                           the SwiftUI app: location, storage, sync, audio, UI
-  Packages/GlidePathCore/        the engine. No UI, no dependencies, no CoreLocation
+  Packages/ZonexploCore/        the engine. No UI, no dependencies, no CoreLocation
 supabase/
   migrations/                    PostGIS schema, RLS, sync functions, the nightly schedule
   functions/sync-cameras/        the nightly Overpass job
@@ -267,7 +267,7 @@ docs/
 scripts/
 ```
 
-`GlidePathCore` is deliberately UI-free, dependency-free and CoreLocation-free.
+`ZonexploCore` is deliberately UI-free, dependency-free and CoreLocation-free.
 That is what lets the entire coaching engine run under `swift test` on any
 machine with no simulator, no Xcode project and no network, and it is why the
 test suite can replay a whole drive in milliseconds.
@@ -493,7 +493,7 @@ network traffic the app makes is anonymous reads of public camera data.
 
 ## What this is not
 
-GlidePath is a speed awareness aid. It is not a navigator, it is not a radar
+Zonexplo is a speed awareness aid. It is not a navigator, it is not a radar
 detector, and it is not a substitute for reading the signs. The camera data will
 sometimes be wrong. The limit on the sign is always the limit.
 
