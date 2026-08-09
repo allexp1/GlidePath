@@ -208,6 +208,18 @@ final class LocalDatabase: @unchecked Sendable {
             }
         }
 
+        // Where a row sits in the catalogue's one level of hierarchy.
+        //
+        // Somewhere too large to download whole is offered per subdivision, and
+        // without a parent those rows are peers of countries: the list sorts by
+        // name, so Massachusetts appears between Lithuania and Moldova, and the
+        // search field offers "245 countries". A state is not a country.
+        migrator.registerMigration("v4_country_parent") { db in
+            try db.alter(table: "country") { table in
+                table.add(column: "parent_code", .text)
+            }
+        }
+
         return migrator
     }
 

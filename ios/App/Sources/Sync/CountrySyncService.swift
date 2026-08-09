@@ -92,12 +92,13 @@ final class CountrySyncService {
                 try db.execute(
                     sql: """
                         INSERT INTO country
-                            (code, name, dataset_version, min_compatible_version,
+                            (code, name, parent_code, dataset_version, min_compatible_version,
                              camera_count, zone_count, last_synced_at,
                              road_limit_version, road_limit_count)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(code) DO UPDATE SET
                             name = excluded.name,
+                            parent_code = excluded.parent_code,
                             dataset_version = excluded.dataset_version,
                             min_compatible_version = excluded.min_compatible_version,
                             camera_count = excluded.camera_count,
@@ -109,6 +110,7 @@ final class CountrySyncService {
                     arguments: [
                         country.code,
                         country.name,
+                        country.parentCode,
                         country.datasetVersion,
                         country.minCompatibleVersion,
                         country.cameraCount,
@@ -130,6 +132,7 @@ final class CountrySyncService {
                 CountryStatus(
                     code: row["code"],
                     name: row["name"],
+                    parentCode: row["parent_code"],
                     serverVersion: row["dataset_version"],
                     installedVersion: row["installed_version"],
                     cameraCount: row["camera_count"],

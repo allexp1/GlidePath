@@ -15,11 +15,30 @@ import SwiftUI
 /// and finding nothing needs to know whether the answer is "no cameras" or "not
 /// yet supported", because only one of those is worth waiting for.
 struct CountryDownloadView: View {
+    /// The country whose subdivisions this list is showing, or nil for the
+    /// top-level list of countries.
+    ///
+    /// Somewhere too large to download whole is offered per state, and a state
+    /// listed beside Lithuania claims to be a country. One screen, used twice.
+    var parent: CountrySyncService.CountryStatus?
+
     @Environment(AppModel.self) private var model
     @State private var search = ""
 
     private var sync: CountrySyncService? { model.sync }
     private var all: [CountrySyncService.CountryStatus] { sync?.countries ?? [] }
+
+    /// The rows this level owns: countries at the top, one country's
+    /// subdivisions below it.
+    private var scoped: [CountrySyncService.CountryStatus] {
+        guard let parent else { return all.filter { !$0.isSubdivision } }
+        return all.filter { $0.parentCode == parent.code }
+    }
+
+    private func children(of country: CountrySyncService.CountryStatus)
+        -> [CountrySyncService.CountryStatus] {
+        all.filter { $0.parentCode == country.code }
+    }
 
     var body: some View {
         List {
@@ -62,7 +81,7 @@ struct CountryDownloadView: View {
                 }
             }
         }
-        .navigationTitle("Countries")
+        .navigationTitle(parent?.name ?? "Countries")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: searchPrompt)
         .refreshable { await sync?.refreshCatalogue() }
@@ -83,15 +102,23 @@ struct CountryDownloadView: View {
     }
 
     private var searchPrompt: String {
-        all.isEmpty ? "Search countries" : "Search \(all.count) countries"
+        if let parent { return "Search \(parent.name)" }
+        // Counts countries, not rows. Offering "245 countries" when two of them
+        // are American states is the same mistake as listing them side by side.
+        let countries = all.filter { !$0.isSubdivision }.count
+        return countries == 0 ? "Search countries" : "Search \(countries) countries"
     }
 
     // MARK: - Grouping
 
     private var visible: [CountrySyncService.CountryStatus] {
-        guard !search.isEmpty else { return all }
+        guard !search.isEmpty else { return scoped }
+        // A search at the top level looks inside subdivisions too. Somebody
+        // typing "Massachusetts" should be shown Massachusetts, not told to
+        // think of the United States first and drill down.
+        let pool = parent == nil ? all : scoped
         let needle = search.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        return all.filter { country in
+        return pool.filter { country in
             country.name
                 .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                 .contains(needle)
@@ -99,12 +126,17 @@ struct CountryDownloadView: View {
         }
     }
 
-    private var installed: [CountrySyncService.CountryStatus] { visible.filter(\.isInstalled) }
+    private var installed: [CountrySyncService.CountryStatus] {
+        visible.filter { $0.isInstalled && children(of: $0).isEmpty }
+    }
+    // A country holding subdivisions belongs here whatever its own row says:
+    // the United States has no cameras of its own and is not "not surveyed",
+    // it is a door to two states that do.
     private var available: [CountrySyncService.CountryStatus] {
-        visible.filter { $0.hasData && !$0.isInstalled }
+        visible.filter { ($0.hasData || !children(of: $0).isEmpty) && !$0.isInstalled }
     }
     private var unsurveyed: [CountrySyncService.CountryStatus] {
-        visible.filter { $0.isUnsurveyed && !$0.isInstalled }
+        visible.filter { $0.isUnsurveyed && !$0.isInstalled && children(of: $0).isEmpty }
     }
     private var knownEmpty: [CountrySyncService.CountryStatus] {
         visible.filter { $0.isKnownEmpty && !$0.isInstalled }
@@ -142,11 +174,67 @@ struct CountryDownloadView: View {
     /// hundreds of megabytes of road network to get them.
     @ViewBuilder
     private func rows(for country: CountrySyncService.CountryStatus) -> some View {
-        row(for: country)
+        let regions = children(of: country)
+        if regions.isEmpty {
+            row(for: country)
+        } else {
+            regionRow(for: country, regions: regions)
+        }
 
         if country.isInstalled, country.hasRoadLimits {
             limitRow(for: country)
         }
+    }
+
+    /// A country offered as a set of subdivisions rather than as one download.
+    ///
+    /// The United States is not downloadable whole - millions of tagged ways,
+    /// which is neither harvestable nor a download anyone would accept - so its
+    /// row is a door rather than a button. Summing the children on the way in
+    /// means the driver can see whether it is worth opening.
+    private func regionRow(
+        for country: CountrySyncService.CountryStatus,
+        regions: [CountrySyncService.CountryStatus]
+    ) -> some View {
+        let withData = regions.filter(\.hasData)
+        let installedCount = regions.filter(\.isInstalled).count
+        let cameras = regions.reduce(0) { $0 + $1.cameraCount }
+
+        return NavigationLink {
+            CountryDownloadView(parent: country)
+        } label: {
+            HStack(spacing: 12) {
+                Text(CountryFlag.emoji(for: country.code))
+                    .font(.title2)
+                    .frame(width: 34)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(country.name)
+                        .font(.body)
+                    Text(regionDetail(
+                        available: withData.count,
+                        installed: installedCount,
+                        cameras: cameras
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 3)
+        }
+        .accessibilityLabel(
+            "\(country.name), \(withData.count) regions available, \(installedCount) downloaded"
+        )
+    }
+
+    private func regionDetail(available: Int, installed: Int, cameras: Int) -> String {
+        guard available > 0 else { return "No regions surveyed yet" }
+
+        let unit = available == 1 ? "region" : "regions"
+        var parts = ["\(available) \(unit)", "\(cameras.formatted()) cameras"]
+        if installed > 0 { parts.append("\(installed) downloaded") }
+        return parts.joined(separator: " · ")
     }
 
     private func limitRow(for country: CountrySyncService.CountryStatus) -> some View {

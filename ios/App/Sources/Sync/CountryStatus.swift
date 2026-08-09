@@ -9,6 +9,10 @@ extension CountrySyncService {
     struct CountryStatus: Identifiable, Equatable, Sendable {
         let code: String
         let name: String
+
+        /// The country this row belongs to, when it is a subdivision of one.
+        let parentCode: String?
+
         let serverVersion: Int
         let installedVersion: Int?
         let cameraCount: Int
@@ -28,6 +32,9 @@ extension CountrySyncService {
 
         var id: String { code }
         var isInstalled: Bool { installedVersion != nil }
+
+        /// A state, province or region rather than a country.
+        var isSubdivision: Bool { parentCode != nil }
         var hasUpdate: Bool {
             guard let installedVersion else { return false }
             return serverVersion > installedVersion

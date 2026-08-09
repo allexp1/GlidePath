@@ -202,6 +202,10 @@ struct SupabaseREST: Sendable {
 struct CountryDTO: Decodable, Sendable {
     let code: String
     let name: String
+
+    /// Set on a subdivision, naming the country it belongs to. Nil on a
+    /// country. The app nests these rather than listing them alongside.
+    let parentCode: String?
     let datasetVersion: Int
     let minCompatibleVersion: Int
     let cameraCount: Int
