@@ -310,7 +310,14 @@ struct CountryDownloadView: View {
 /// out of the code arithmetically and no table can go stale.
 enum CountryFlag {
     static func emoji(for code: String) -> String {
-        let letters = code.uppercased().unicodeScalars
+        // A subdivision flies its country's flag. Places too large to download
+        // whole are listed per state as `US-NY`, and there is no regional
+        // indicator sequence for a state - without this every one of them shows
+        // the white flag used for "unknown", which reads as broken data rather
+        // than as a deliberate subdivision.
+        let country = code.split(separator: "-").first.map(String.init) ?? code
+
+        let letters = country.uppercased().unicodeScalars
         guard letters.count == 2 else { return "🏳️" }
 
         var flag = ""

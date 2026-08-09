@@ -1,7 +1,7 @@
 import { assert, assertEquals } from 'jsr:@std/assert@^1'
 import type { LatLon } from './geo.ts'
 import type { OverpassElement, OverpassMember } from './overpass.ts'
-import { translateAverageSpeedZone, zoneRejectionReason } from './translate.ts'
+import { cameraTypeFromTags, translateAverageSpeedZone, zoneRejectionReason } from './translate.ts'
 
 // Modelled on relation/11193030 and relation/12419066 in Lithuania, which is
 // where every rule in here came from.
@@ -209,4 +209,55 @@ Deno.test('a section under the floor says how long it actually was', () => {
   )
 
   assert(reason?.includes('500 m floor'), `expected the floor to be named: ${reason}`)
+})
+
+// ---------------------------------------------------------------------------
+// What counts as a camera worth warning about
+// ---------------------------------------------------------------------------
+
+// An automatic plate reader photographs every plate so the number can be looked
+// up later. It measures no speed and issues no speeding ticket, so warning at
+// one teaches the driver that these warnings mean nothing.
+//
+// The numbers are why this is a rule and not a nicety: New York has 111 nodes
+// tagged highway=speed_camera and 3,788 tagged as ALPR surveillance. Letting the
+// surveillance fallback swallow those would fire ~3,800 false warnings across
+// one state.
+Deno.test('a plate reader is not a speed camera', () => {
+  assertEquals(
+    cameraTypeFromTags({
+      'man_made': 'surveillance',
+      'surveillance:zone': 'traffic',
+      'surveillance:type': 'ALPR',
+      'manufacturer': 'Flock Safety'
+    }),
+    null
+  )
+})
+
+// A mapper asserting enforcement=maxspeed outranks our inference from the
+// hardware type. Cameras really do read plates in order to enforce speed.
+Deno.test('a plate reader that a mapper says enforces speed is still a camera', () => {
+  assertEquals(
+    cameraTypeFromTags({
+      'man_made': 'surveillance',
+      'surveillance:zone': 'traffic',
+      'surveillance:type': 'ALPR',
+      'enforcement': 'maxspeed'
+    }),
+    'fixed'
+  )
+})
+
+// The fallback still has to work for what it was written for: an ambiguous
+// traffic-zone camera with no type given at all.
+Deno.test('an untyped traffic surveillance camera is still treated as fixed', () => {
+  assertEquals(
+    cameraTypeFromTags({ 'man_made': 'surveillance', 'surveillance:zone': 'traffic' }),
+    'fixed'
+  )
+})
+
+Deno.test('an ordinary speed camera is unaffected', () => {
+  assertEquals(cameraTypeFromTags({ 'highway': 'speed_camera' }), 'fixed')
 })

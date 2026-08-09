@@ -55,12 +55,12 @@ async function main(): Promise<number> {
   const tileArg = args.find((arg) => arg.startsWith('--tile='))
   const tileDegrees = tileArg ? Number(tileArg.slice('--tile='.length)) : undefined
 
-  if (!requested || !/^[A-Za-z]{2}$/.test(requested)) {
+  if (!requested || !/^[A-Za-z]{2}(-[A-Za-z0-9]{1,3})?$/.test(requested)) {
     console.error(
-      'Usage: seed_limits.ts <ISO 3166-1 alpha-2> [--tile=DEGREES] [--dry-run] [--restart]'
+      'Usage: seed_limits.ts <ISO 3166-1 alpha-2 or 3166-2 subdivision> [--tile=DEGREES] [--dry-run] [--restart]'
     )
     console.error('  e.g. seed_limits.ts LT')
-    console.error('       seed_limits.ts FI --tile=0.5    (a quarter of the tiles)')
+    console.error('       seed_limits.ts FI --tile=0.5    (a quarter of the tiles)\n       seed_limits.ts US-NY             (a subdivision, for somewhere too big to take whole)')
     return 2
   }
 

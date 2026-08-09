@@ -68,7 +68,7 @@ async function main(): Promise<number> {
   if (!requested) {
     console.error('Usage: seed.ts <country> [--dry-run]')
     console.error('')
-    console.error(`  <country> is an ISO 3166-1 alpha-2 code (LT, FR, PL) or one of:`)
+    console.error(`  <country> is an ISO 3166-1 alpha-2 code (LT, FR, PL), an ISO 3166-2\n  subdivision (US-NY, US-MA), or one of:`)
     console.error(`  ${Object.keys(ALIASES).join(', ')}`)
     return 2
   }
@@ -155,8 +155,8 @@ async function resolveTarget(
   const alias = ALIASES[requested.toLowerCase()]
   if (alias) return alias
 
-  if (!/^[A-Za-z]{2}$/.test(requested)) {
-    console.error(`"${requested}" is neither an ISO 3166-1 alpha-2 code nor a known alias.`)
+  if (!/^[A-Za-z]{2}(-[A-Za-z0-9]{1,3})?$/.test(requested)) {
+    console.error(`"${requested}" is not an ISO 3166-1 code, an ISO 3166-2 subdivision, or a known alias.`)
     console.error(`Known aliases: ${Object.keys(ALIASES).join(', ')}`)
     return null
   }

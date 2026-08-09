@@ -184,6 +184,27 @@ export function cameraTypeFromTags(tags: Record<string, string>): CameraType | n
   if (catchesSignals) return 'red_light'
   if (catchesSpeed) return 'fixed'
 
+  // A plate reader is not an enforcement camera and must not be warned about.
+  //
+  // An ALPR photographs every plate that passes so the number can be looked up
+  // later. It does not measure speed and cannot issue a speeding ticket, so a
+  // warning at one teaches the driver that this app's warnings do not mean
+  // anything.
+  //
+  // This is excluded explicitly because the fallback below would otherwise
+  // swallow it, and the numbers make that fatal rather than untidy: New York
+  // has 111 nodes tagged highway=speed_camera and 3,788 tagged as ALPR
+  // surveillance, largely from an organised mapping campaign of Flock Safety
+  // units. Without this the app would fire ~3,800 false warnings across the
+  // state, be muted inside a day, and take its real warnings down with it.
+  //
+  // Ordered after the enforcement checks on purpose. A camera tagged both ALPR
+  // and enforcement=maxspeed has been asserted by a mapper to enforce speed,
+  // and that assertion is worth more than this inference.
+  if ((tags['surveillance:type'] ?? '').toUpperCase().includes('ALPR')) {
+    return null
+  }
+
   // A surveillance node in a traffic zone with no enforcement tag at all. It is
   // probably a traffic-monitoring camera rather than an enforcement one, but
   // the cost of a false warning is low and the cost of silence is a fine.

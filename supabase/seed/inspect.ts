@@ -36,8 +36,8 @@ const TOP_N = 12
 
 async function main(): Promise<number> {
   const requested = Deno.args.find((arg) => !arg.startsWith('--'))
-  if (!requested || !/^[A-Za-z]{2}$/.test(requested)) {
-    console.error('Usage: inspect.ts <ISO 3166-1 alpha-2 code>')
+  if (!requested || !/^[A-Za-z]{2}(-[A-Za-z0-9]{1,3})?$/.test(requested)) {
+    console.error('Usage: inspect.ts <ISO 3166-1 alpha-2 code or 3166-2 subdivision>')
     console.error('  e.g. deno run --allow-net --allow-read inspect.ts LT')
     return 2
   }

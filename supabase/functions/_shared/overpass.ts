@@ -42,6 +42,29 @@ export interface OverpassResponse {
 }
 
 /**
+ * The tags that select one country, or one subdivision of one.
+ *
+ * Some places cannot be handled whole. The United States has millions of ways
+ * carrying a maxspeed tag, so "download the USA" is not an offer any phone can
+ * accept, and a harvest of it would run for weeks. The unit that works there is
+ * the state.
+ *
+ * OpenStreetMap already draws that line: a country carries `ISO3166-1` at
+ * `admin_level=2`, and its subdivisions carry `ISO3166-2` at `admin_level=4`.
+ * A hyphen in the code is what distinguishes them - `LT` is Lithuania, `US-NY`
+ * is New York - which is ISO 3166-2's own convention rather than anything
+ * invented here.
+ *
+ * Everything downstream is unchanged: the catalogue is keyed on an opaque text
+ * code, and `overpass_iso_code` already existed to let the two differ.
+ */
+export function areaSelector(isoCode: string): string {
+  return isoCode.includes('-')
+    ? `["ISO3166-2"="${isoCode}"][admin_level=4]`
+    : `["ISO3166-1"="${isoCode}"][admin_level=2]`
+}
+
+/**
  * Point cameras.
  *
  * `highway=speed_camera` is the main tagging scheme. `man_made=surveillance`
@@ -52,7 +75,7 @@ export interface OverpassResponse {
  */
 export function pointCameraQuery(isoCode: string, timeoutSeconds = 180): string {
   return `[out:json][timeout:${timeoutSeconds}];
-area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
+area${areaSelector(isoCode)}->.country;
 (
   node["highway"="speed_camera"](area.country);
   node["man_made"="surveillance"]["surveillance:zone"="traffic"](area.country);
@@ -80,7 +103,7 @@ out body qt;`
  */
 export function averageSpeedZoneQuery(isoCode: string, timeoutSeconds = 300): string {
   return `[out:json][timeout:${timeoutSeconds}];
-area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
+area${areaSelector(isoCode)}->.country;
 relation["type"="enforcement"]["enforcement"="average_speed"](area.country)->.sections;
 .sections out geom;
 way(r.sections)->.roads;
@@ -93,7 +116,7 @@ way(r.sections)->.roads;
  */
 export function restStopQuery(isoCode: string, timeoutSeconds = 180): string {
   return `[out:json][timeout:${timeoutSeconds}];
-area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
+area${areaSelector(isoCode)}->.country;
 (
   node["highway"="rest_area"](area.country);
   node["highway"="services"](area.country);
@@ -140,7 +163,7 @@ export const DRIVABLE_HIGHWAY_VALUES = [
  */
 export function countryBoundsQuery(isoCode: string, timeoutSeconds = 90): string {
   return `[out:json][timeout:${timeoutSeconds}];
-relation["ISO3166-1"="${isoCode}"][admin_level=2];
+relation${areaSelector(isoCode)};
 out bb;`
 }
 
@@ -166,7 +189,7 @@ export function roadLimitQuery(
   const highways = DRIVABLE_HIGHWAY_VALUES.join('|')
 
   return `[out:json][timeout:${timeoutSeconds}];
-area["ISO3166-1"="${isoCode}"][admin_level=2]->.country;
+area${areaSelector(isoCode)}->.country;
 (
   way["highway"~"^(${highways})$"]["maxspeed"](area.country)(${bbox});
   way["highway"~"^(${highways})$"]["maxspeed:forward"](area.country)(${bbox});

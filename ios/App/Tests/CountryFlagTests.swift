@@ -33,6 +33,16 @@ final class CountryFlagTests: XCTestCase {
         XCTAssertFalse(CountryFlag.emoji(for: "XK").isEmpty)
     }
 
+    /// Somewhere too large to download whole is listed per subdivision, and a
+    /// state has no regional indicator sequence of its own. Flying its
+    /// country's flag beats the white "unknown" flag, which in a list of real
+    /// flags reads as broken data rather than as a deliberate subdivision.
+    func testASubdivisionFliesItsCountrysFlag() {
+        XCTAssertEqual(CountryFlag.emoji(for: "US-NY"), "🇺🇸")
+        XCTAssertEqual(CountryFlag.emoji(for: "US-MA"), "🇺🇸")
+        XCTAssertEqual(CountryFlag.emoji(for: "us-ny"), "🇺🇸")
+    }
+
     /// Anything that is not two letters must not produce a mangled glyph, and
     /// must not crash on the arithmetic.
     func testRubbishFallsBackToAPlainFlag() {

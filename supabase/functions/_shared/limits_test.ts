@@ -1,7 +1,14 @@
 import { assert, assertAlmostEquals, assertEquals } from 'jsr:@std/assert@^1'
 import { boundingBoxTiles, polylineLength, simplifyPolyline, tileKey } from './geo.ts'
 import type { BoundingBox, LatLon } from './geo.ts'
-import { DRIVABLE_HIGHWAY_VALUES, roadLimitQuery } from './overpass.ts'
+import {
+  areaSelector,
+  averageSpeedZoneQuery,
+  countryBoundsQuery,
+  DRIVABLE_HIGHWAY_VALUES,
+  pointCameraQuery,
+  roadLimitQuery
+} from './overpass.ts'
 import type { OverpassElement } from './overpass.ts'
 import { translateRoadLimit } from './translate.ts'
 import { syncRoadLimits } from './limits.ts'
@@ -140,6 +147,29 @@ Deno.test('the tile query constrains by both country area and bounding box', () 
   assert(query.includes('(area.country)'))
   assert(query.includes('54,24,54.25,24.25'))
   assert(query.includes('out geom'))
+})
+
+// The United States cannot be harvested or downloaded whole, so the unit there
+// is the state. A hyphen is ISO 3166-2's own marker for a subdivision, and
+// OpenStreetMap files those under a different tag at a different admin level -
+// asking for ISO3166-1="US-NY" matches nothing and returns an empty result that
+// looks exactly like a state with no speed limits in it.
+Deno.test('a subdivision code selects ISO3166-2 at admin_level 4', () => {
+  assertEquals(areaSelector('US-NY'), '["ISO3166-2"="US-NY"][admin_level=4]')
+  assertEquals(areaSelector('LT'), '["ISO3166-1"="LT"][admin_level=2]')
+})
+
+Deno.test('every query type honours the subdivision selector', () => {
+  const tile = { minLat: 42, minLon: -73, maxLat: 42.5, maxLon: -72.5 }
+  for (const query of [
+    roadLimitQuery('US-MA', tile),
+    pointCameraQuery('US-MA'),
+    averageSpeedZoneQuery('US-MA'),
+    countryBoundsQuery('US-MA')
+  ]) {
+    assert(query.includes('"ISO3166-2"="US-MA"'), query.slice(0, 80))
+    assert(!query.includes('ISO3166-1'), query.slice(0, 80))
+  }
 })
 
 // ---------------------------------------------------------------------------
