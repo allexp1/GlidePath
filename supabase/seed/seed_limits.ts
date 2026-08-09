@@ -40,10 +40,41 @@ async function main(): Promise<number> {
   const restart = args.includes('--restart')
   const requested = args.find((arg) => !arg.startsWith('--'))
 
+  // Tile size, because the default does not scale to a large country.
+  //
+  // A tile costs roughly the same whatever is in it - the cost is Overpass
+  // resolving the area filter, not the data coming back - so the run time is
+  // essentially the tile count. At the 0.25 degree default Israel is 112 tiles
+  // and finishes in an hour, while Finland is 2193 and would take a day. Half a
+  // degree divides the count by four.
+  //
+  // It is not free: a tile too large to answer inside Overpass's timeout comes
+  // back as a failure, and a run with failed tiles is reported incomplete so
+  // that nothing is retired on the strength of it. Err small on dense country,
+  // large on empty country.
+  const tileArg = args.find((arg) => arg.startsWith('--tile='))
+  const tileDegrees = tileArg ? Number(tileArg.slice('--tile='.length)) : undefined
+
   if (!requested || !/^[A-Za-z]{2}$/.test(requested)) {
-    console.error('Usage: seed_limits.ts <ISO 3166-1 alpha-2> [--dry-run] [--restart]')
+    console.error(
+      'Usage: seed_limits.ts <ISO 3166-1 alpha-2> [--tile=DEGREES] [--dry-run] [--restart]'
+    )
     console.error('  e.g. seed_limits.ts LT')
+    console.error('       seed_limits.ts FI --tile=0.5    (a quarter of the tiles)')
     return 2
+  }
+
+  if (tileArg && (!Number.isFinite(tileDegrees) || tileDegrees! <= 0)) {
+    console.error(`--tile needs a positive number of degrees, got "${tileArg}"`)
+    return 2
+  }
+
+  // The checkpoint records tile keys, which are derived from the tile size, so
+  // resuming a run at a different size would skip tiles that were never
+  // covered and report a country complete when it is not.
+  if (tileArg && !restart && !dryRun) {
+    console.log('Note: --tile changes the tile keys, so pass --restart if a')
+    console.log('      checkpoint from a different tile size already exists.')
   }
 
   const code = requested.toUpperCase()
@@ -94,6 +125,7 @@ async function main(): Promise<number> {
 
   const report = await syncRoadLimits(client as unknown as DatabaseClient, code, iso, {
     dryRun,
+    tileDegrees,
     completedTiles,
     log: (message) => console.log(`  ${message}`),
     onTileComplete: async (tile) => {

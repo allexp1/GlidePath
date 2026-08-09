@@ -142,6 +142,32 @@ Every finished tile is written to a checkpoint file beside the script, so ctrl-C
 and re-run resumes rather than starting again. The checkpoint is deleted once a
 run covers the whole country. `--restart` ignores it.
 
+#### The tile size has to change with the country
+
+`--tile=DEGREES` overrides the quarter-degree default, and on anything large it
+has to. A tile costs about the same whatever is in it, so the run time is the
+tile count and nothing else:
+
+| | tiles at 0.25° | tiles at 0.5° |
+| --- | --- | --- |
+| Israel | 112 | 30 |
+| Finland | 2193 | 572 |
+| Sweden | ~2970 | ~742 |
+
+At the default, Finland is a day of querying. Halving the tile size divides the
+count by four.
+
+The limit on how large is the Overpass timeout: a tile too big to answer comes
+back a failure, and a run with failed tiles is reported incomplete so that
+nothing is retired on the strength of it. Err small on dense country and large
+on empty country — Finland and Sweden are mostly forest, which is why half a
+degree works there and would be risky over Israel.
+
+**A checkpoint belongs to one tile size.** The keys are derived from it, so
+resuming at a different size skips tiles that were never covered and calls the
+country complete. Pass `--restart` when changing it; the CLI warns rather than
+guessing.
+
 ### The same harvest without a laptop
 
 `make seed-limits` needs Deno and a checkout. That is fine for whoever maintains
