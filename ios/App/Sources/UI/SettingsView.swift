@@ -1,8 +1,10 @@
 import GlidePathCore
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         @Bindable var model = model
@@ -19,17 +21,24 @@ struct SettingsView: View {
             Section {
                 Toggle("Spoken alerts", isOn: $model.settings.voiceEnabled)
 
+                Picker("Voice", selection: $model.settings.voiceIdentifier) {
+                    Text("Automatic").tag(String?.none)
+                    ForEach(spokenLanguageVoices) { voice in
+                        Text("\(voice.name) · \(voice.quality.label)").tag(String?.some(voice.id))
+                    }
+                }
+                .disabled(!model.settings.voiceEnabled || spokenLanguageVoices.isEmpty)
+
                 Button("Hear a sample") {
                     model.voice.preview()
                 }
                 .disabled(!model.settings.voiceEnabled)
+
+                Toggle("Silent switch mutes GlidePath", isOn: $model.settings.respectSilentSwitch)
             } header: {
                 Text("Voice")
             } footer: {
-                Text(
-                    "GlidePath ducks whatever you are listening to for a second or two, "
-                        + "then hands the audio back. It never takes over playback."
-                )
+                Text(voiceFooter)
             }
 
             Section {
@@ -38,7 +47,7 @@ struct SettingsView: View {
                 Toggle("Red light cameras", isOn: $model.settings.announceRedLightCameras)
                 Toggle("Mobile camera spots", isOn: $model.settings.announceMobileHotspots)
             } header: {
-                Text("What to announce")
+                Text("Camera alerts")
             } footer: {
                 Text(
                     "Each of these can be silenced on its own. Mobile camera spots are "
@@ -46,12 +55,21 @@ struct SettingsView: View {
                         + "one might be there, not that one is."
                 )
             }
+            // Every toggle above is a category of *spoken* warning, so with the
+            // voice off they are four switches that visibly do nothing. The
+            // road-limit pair below has always been disabled by its parent;
+            // this is the same rule applied to the parent above it.
+            .disabled(!model.settings.voiceEnabled)
 
             Section {
                 Toggle("Show the limit on screen", isOn: $model.settings.showSpeedLimit)
                 Toggle("Say when I am over it", isOn: $model.settings.announceSpeedLimit)
-                    .disabled(!model.settings.showSpeedLimit)
-                LabeledContent("Limits downloaded", value: limitSummary)
+                    .disabled(!model.settings.showSpeedLimit || !model.settings.voiceEnabled)
+                NavigationLink {
+                    CountryDownloadView()
+                } label: {
+                    LabeledContent("Limits downloaded", value: limitSummary)
+                }
             } header: {
                 Text("Road speed limit")
             } footer: {
@@ -59,17 +77,8 @@ struct SettingsView: View {
                     "The limit for the road you are on, from OpenStreetMap. It is spoken "
                         + "only after you have held a speed over it for a few seconds, and "
                         + "not more than once a minute. Roads nobody has tagged have no "
-                        + "limit and stay silent rather than being guessed at. Download "
-                        + "limits per country under Countries; they are much larger than "
-                        + "the camera data."
-                )
-            }
-
-            Section {
-                Toggle("Silent switch mutes GlidePath", isOn: $model.settings.respectSilentSwitch)
-            } footer: {
-                Text(
-                    "Off by default, so a phone silenced for a meeting still warns you about a camera."
+                        + "limit and stay silent rather than being guessed at. Limits are "
+                        + "downloaded per country and are much larger than the camera data."
                 )
             }
 
@@ -80,6 +89,19 @@ struct SettingsView: View {
                     LabeledContent("Countries", value: downloadSummary)
                 }
                 LabeledContent("Location access", value: locationSummary)
+
+                // Anything short of Always means no warning can ever be spoken
+                // with the phone locked, which is the whole product. Naming the
+                // problem and offering no way out of it is the one thing this
+                // row must not do.
+                if model.location.authorizationStatus == .notDetermined {
+                    Button("Allow location access") {
+                        Task { _ = await model.location.requestWhenInUse() }
+                    }
+                } else if model.location.authorizationStatus != .authorizedAlways {
+                    Button("Fix in iOS Settings") { openSystemSettings() }
+                }
+
                 LabeledContent("Position updates", value: trackingSummary)
             } header: {
                 Text("Data and permissions")
@@ -107,6 +129,53 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        // A voice can be installed in iOS Settings while GlidePath sits in the
+        // background, and a picker that only grows on relaunch is how that
+        // download appears to have failed.
+        .task {
+            model.voice.refreshVoices()
+
+            // It can be deleted there too. VoiceCoach already falls back to the
+            // best installed voice, so speech keeps working - but a Picker
+            // whose selection matches no row renders blank, which would show an
+            // empty setting beside a voice that is audibly speaking.
+            if let chosen = model.settings.voiceIdentifier,
+               !model.voice.availableVoices.contains(where: { $0.id == chosen }) {
+                model.settings.voiceIdentifier = nil
+            }
+        }
+    }
+
+    // MARK: - Voice
+
+    /// The voices that can read the Phrasebook, best first.
+    private var spokenLanguageVoices: [VoiceOption] {
+        VoiceCatalogue.matching(model.voice.availableVoices, language: VoiceCatalogue.spokenLanguage)
+    }
+
+    private var voiceFooter: String {
+        let ducking = "GlidePath ducks whatever you are listening to for a second or two, "
+            + "then hands the audio back. It never takes over playback."
+
+        // The compact voice is the robotic one, and nothing in GlidePath can
+        // install a better one - only iOS can. Saying where is the whole point
+        // of the hint; without it the driver concludes this is how the app
+        // sounds.
+        guard VoiceCatalogue.hasUpgradedVoice(
+            in: model.voice.availableVoices,
+            for: VoiceCatalogue.spokenLanguage
+        ) else {
+            return ducking
+                + "\n\nOnly the basic voice is installed. iOS Settings > Accessibility > "
+                + "Spoken Content > Voices has better ones to download, and GlidePath "
+                + "will use the best it finds."
+        }
+        return ducking
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     /// How many countries this phone actually holds, so the row answers the
