@@ -223,7 +223,16 @@ format: ## Autocorrect what SwiftLint can fix
 ARCHIVE ?= ios/build/Zonexplo.xcarchive
 
 .PHONY: icon
-icon: ## Regenerate the placeholder app icon
+icon: ## Redraw the OLD placeholder icon over the real artwork (needs FORCE=1)
+	@# The asset catalogue holds real artwork now. This script draws the
+	@# placeholder it replaced, and it writes to the same path, so running it
+	@# out of habit silently swaps a designed icon for a coloured square - and
+	@# nothing between here and App Store Connect would mention it.
+	@if [ "$(FORCE)" != "1" ]; then \
+		echo "make icon regenerates the OLD placeholder and overwrites the real icon."; \
+		echo "If that is genuinely what you want:  make icon FORCE=1"; \
+		exit 1; \
+	fi
 	python3 scripts/generate-app-icon.py
 
 .PHONY: archive
