@@ -29,7 +29,12 @@ final class VoiceCoach: NSObject, CoachVoice {
 
         var volume: Double = 1.0
 
-        /// BCP-47 tag, or nil to follow the system voice.
+        /// An `AVSpeechSynthesisVoice` identifier, or nil to let GlidePath pick
+        /// the best installed voice for the system language.
+        ///
+        /// Nil is the useful default and not the same as leaving the utterance
+        /// alone: an utterance with no voice gets the *compact* one, which is
+        /// the worst voice on the phone. See `VoiceCatalogue`.
         var voiceIdentifier: String?
 
         /// When true the silent switch silences GlidePath.
@@ -42,10 +47,22 @@ final class VoiceCoach: NSObject, CoachVoice {
         static let `default` = Settings()
     }
 
-    var settings: Settings
+    var settings: Settings {
+        didSet {
+            if settings.voiceIdentifier != oldValue.voiceIdentifier { chosenVoice = nil }
+        }
+    }
+
+    /// The usable voices this phone has, best first, for the settings picker.
+    private(set) var availableVoices: [VoiceOption] = []
 
     private let synthesizer = AVSpeechSynthesizer()
     private var isSessionActive = false
+
+    /// Resolved once and reused. Looking a voice up walks every installed
+    /// voice, which is not work to repeat on a warning that has to be spoken
+    /// now.
+    private var chosenVoice: AVSpeechSynthesisVoice?
 
     /// Set while an utterance is in flight, so the session is only released
     /// once nothing is speaking.
@@ -55,6 +72,39 @@ final class VoiceCoach: NSObject, CoachVoice {
         self.settings = settings
         super.init()
         synthesizer.delegate = self
+        refreshVoices()
+    }
+
+    /// Re-reads the installed voices.
+    ///
+    /// Called when the settings screen appears, because the driver can install
+    /// a voice in iOS Settings while GlidePath is in the background and a list
+    /// that only changes on relaunch is how a download appears to have failed.
+    func refreshVoices() {
+        availableVoices = VoiceCatalogue.installed
+        chosenVoice = nil
+    }
+
+    /// The voice to speak with.
+    ///
+    /// Falls through to the best installed voice when the chosen one cannot be
+    /// resolved, which happens more than it sounds: the driver deleted it in
+    /// iOS Settings, or restored this install onto a phone that never had it.
+    /// Dropping silently to the compact default there would be the robotic
+    /// voice coming back with no explanation.
+    private func currentVoice() -> AVSpeechSynthesisVoice? {
+        if let chosenVoice { return chosenVoice }
+
+        if let identifier = settings.voiceIdentifier,
+           let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+            chosenVoice = voice
+            return voice
+        }
+
+        chosenVoice = VoiceCatalogue
+            .best(from: availableVoices, preferring: VoiceCatalogue.spokenLanguage)
+            .flatMap { AVSpeechSynthesisVoice(identifier: $0.id) }
+        return chosenVoice
     }
 
     // MARK: - CoachVoice
@@ -75,11 +125,7 @@ final class VoiceCoach: NSObject, CoachVoice {
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * Float(settings.rateScale)
         utterance.volume = Float(settings.volume)
         utterance.postUtteranceDelay = 0
-
-        if let identifier = settings.voiceIdentifier {
-            utterance.voice = AVSpeechSynthesisVoice(identifier: identifier)
-                ?? AVSpeechSynthesisVoice(language: identifier)
-        }
+        utterance.voice = currentVoice()
 
         pendingUtterances += 1
         synthesizer.speak(utterance)

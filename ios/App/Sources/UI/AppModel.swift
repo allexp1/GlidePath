@@ -121,6 +121,11 @@ struct AppSettings: Equatable {
     var announceSpeedLimit: Bool
     var showSpeedLimit: Bool
     var respectSilentSwitch: Bool
+
+    /// The chosen `AVSpeechSynthesisVoice` identifier, or nil for "let
+    /// GlidePath pick the best installed one", which is the default.
+    var voiceIdentifier: String?
+
     var hasSeenOnboarding: Bool
 
     /// Whether the driver had the app watching the road when it was last
@@ -138,6 +143,7 @@ struct AppSettings: Equatable {
         announceSpeedLimit = defaults.object(forKey: Keys.announceSpeedLimit) as? Bool ?? true
         showSpeedLimit = defaults.object(forKey: Keys.showSpeedLimit) as? Bool ?? true
         respectSilentSwitch = defaults.object(forKey: Keys.respectSilentSwitch) as? Bool ?? false
+        voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
         hasSeenOnboarding = defaults.bool(forKey: Keys.hasSeenOnboarding)
         isWatching = defaults.bool(forKey: Keys.isWatching)
     }
@@ -152,6 +158,8 @@ struct AppSettings: Equatable {
         defaults.set(announceSpeedLimit, forKey: Keys.announceSpeedLimit)
         defaults.set(showSpeedLimit, forKey: Keys.showSpeedLimit)
         defaults.set(respectSilentSwitch, forKey: Keys.respectSilentSwitch)
+        // set(nil:) removes the key, which is exactly what "automatic" means.
+        defaults.set(voiceIdentifier, forKey: Keys.voiceIdentifier)
         defaults.set(hasSeenOnboarding, forKey: Keys.hasSeenOnboarding)
         defaults.set(isWatching, forKey: Keys.isWatching)
     }
@@ -173,6 +181,7 @@ struct AppSettings: Equatable {
         var settings = VoiceCoach.Settings.default
         settings.enabled = voiceEnabled
         settings.respectSilentSwitch = respectSilentSwitch
+        settings.voiceIdentifier = voiceIdentifier
         return settings
     }
 
@@ -186,6 +195,7 @@ struct AppSettings: Equatable {
         static let announceSpeedLimit = "settings.announceSpeedLimit"
         static let showSpeedLimit = "settings.showSpeedLimit"
         static let respectSilentSwitch = "settings.respectSilentSwitch"
+        static let voiceIdentifier = "settings.voiceIdentifier"
         static let hasSeenOnboarding = "settings.hasSeenOnboarding"
         static let isWatching = "settings.isWatching"
     }
