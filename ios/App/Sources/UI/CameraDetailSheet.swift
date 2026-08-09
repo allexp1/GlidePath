@@ -17,9 +17,37 @@ struct CameraDetailSheet: View {
     /// Where the driver is, when known, so the sheet can say how far away it is.
     let from: Coordinate?
 
+    /// Filing a report needs the REST client and the country the camera is in,
+    /// neither of which the sheet can work out for itself.
+    let report: ((ReportKind) async -> Bool)?
+
     @Environment(\.dismiss) private var dismiss
+    @State private var reportState = ReportState.idle
 
     private var phrasebook: Phrasebook { Phrasebook(units: units) }
+
+    enum ReportKind: String, CaseIterable, Identifiable {
+        case cameraGone = "camera_gone"
+        case wrongType = "wrong_type"
+        case wrongLimit = "wrong_limit"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .cameraGone: return "There is no camera here"
+            case .wrongType: return "It is a different kind of camera"
+            case .wrongLimit: return "The speed limit is wrong"
+            }
+        }
+    }
+
+    private enum ReportState: Equatable {
+        case idle
+        case sending
+        case sent
+        case failed
+    }
 
     var body: some View {
         NavigationStack {
@@ -34,6 +62,8 @@ struct CameraDetailSheet: View {
                     }
 
                     openInMaps
+
+                    reportSection
                 }
                 .padding(20)
             }
@@ -138,6 +168,66 @@ struct CameraDetailSheet: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .zonexploGlass(cornerRadius: 18, tint: .orange)
+    }
+
+    /// Reporting exists because the only people who can see that a camera is
+    /// wrong are the drivers passing it. Today's harvest translated 3,788
+    /// licence-plate readers as speed cameras in one state, and nothing in the
+    /// system would have said so.
+    ///
+    /// A report changes nothing on its own. It goes to a queue at status
+    /// pending and waits for a human, which is why an anonymous write endpoint
+    /// is acceptable at all.
+    @ViewBuilder
+    private var reportSection: some View {
+        if let report {
+            VStack(alignment: .leading, spacing: 10) {
+                switch reportState {
+                case .sent:
+                    Label("Thank you - somebody will check it", systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+
+                case .sending:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Sending").font(.footnote).foregroundStyle(.secondary)
+                    }
+
+                case .idle, .failed:
+                    Text("Something wrong with this camera?")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ForEach(ReportKind.allCases) { kind in
+                        Button(kind.label) {
+                            reportState = .sending
+                            Task {
+                                let ok = await report(kind)
+                                reportState = ok ? .sent : .failed
+                                if ok { Analytics.capture(.cameraReported, ["kind": kind.rawValue]) }
+                            }
+                        }
+                        .font(.footnote)
+                        .buttonStyle(.bordered)
+                    }
+
+                    if reportState == .failed {
+                        Text("That did not send. It needs a connection.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Text(
+                        "Reports are anonymous and are reviewed by a person before anything "
+                            + "changes. Nothing about where you have been is sent."
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var openInMaps: some View {

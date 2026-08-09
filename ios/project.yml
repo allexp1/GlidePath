@@ -137,6 +137,12 @@ targets:
             Zonexplo switches to precise location only while you are inside an
             average-speed camera zone, so it can tell you the exact speed to hold.
 
+        # Core Motion's automotive confidence is what lets the app start
+        # watching by itself. iOS refuses the API without a purpose string.
+        NSMotionUsageDescription:
+          Zonexplo uses motion activity to notice when you have started driving, so it can
+          begin watching for cameras without you having to remember to press start.
+
         UIBackgroundModes:
           - location
           - audio

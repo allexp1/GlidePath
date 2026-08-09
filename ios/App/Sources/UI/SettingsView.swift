@@ -110,6 +110,8 @@ struct SettingsView: View {
                     Button("Fix in iOS Settings") { openSystemSettings() }
                 }
 
+                NavigationLink("Drive history") { DriveHistoryView() }
+
                 LabeledContent("Position updates", value: trackingSummary)
             } header: {
                 Text("Data and permissions")
@@ -122,6 +124,20 @@ struct SettingsView: View {
                     "Position updates should show a rising count while you are watching "
                         + "the road. If it stays at nothing, no warning can be timed and "
                         + "the problem is location access rather than the alerts."
+                )
+            }
+
+            Section {
+                Toggle("Start when I start driving", isOn: $model.settings.autoStartWhenDriving)
+                    .disabled(!DrivingDetector.isSupported)
+            } footer: {
+                Text(
+                    DrivingDetector.isSupported
+                        ? "Zonexplo begins watching by itself once your phone is confident it is "
+                            + "in a moving car, so a drive is never missed because nobody pressed "
+                            + "start. It never stops by itself: at a red light you are still driving."
+                        : "This iPhone does not report motion activity, so watching has to be "
+                            + "started by hand."
                 )
             }
 

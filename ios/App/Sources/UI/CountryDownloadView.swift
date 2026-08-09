@@ -25,6 +25,10 @@ struct CountryDownloadView: View {
     @Environment(AppModel.self) private var model
     @State private var search = ""
 
+    /// The country whose legal notice is being shown, if any. Downloading waits
+    /// on the driver reading it.
+    @State private var pendingLegal: CountrySyncService.CountryStatus?
+
     private var sync: CountrySyncService? { model.sync }
     private var all: [CountrySyncService.CountryStatus] { sync?.countries ?? [] }
 
@@ -88,6 +92,14 @@ struct CountryDownloadView: View {
         .task {
             if all.isEmpty { await sync?.refreshCatalogue() }
         }
+        .sheet(item: $pendingLegal) { country in
+            LegalNoticeSheet(country: country) { accepted in
+                pendingLegal = nil
+                guard accepted else { return }
+                model.settings.acceptLegal(country.code)
+                Task { await sync?.download(country.code) }
+            }
+        }
         .overlay {
             if all.isEmpty {
                 ContentUnavailableView(
@@ -126,17 +138,28 @@ struct CountryDownloadView: View {
         }
     }
 
-    private var installed: [CountrySyncService.CountryStatus] {
-        visible.filter { $0.isInstalled && children(of: $0).isEmpty }
+    // A country holding subdivisions is filed by what its children are, not by
+    // its own row - which is always empty, because the United States has no
+    // cameras of its own. Downloading both states and still finding the country
+    // under "Available" is the list contradicting the screen behind it.
+    private func isDownloaded(_ country: CountrySyncService.CountryStatus) -> Bool {
+        let regions = children(of: country)
+        return regions.isEmpty ? country.isInstalled : regions.contains(where: \.isInstalled)
     }
-    // A country holding subdivisions belongs here whatever its own row says:
-    // the United States has no cameras of its own and is not "not surveyed",
-    // it is a door to two states that do.
+
+    private func isOffered(_ country: CountrySyncService.CountryStatus) -> Bool {
+        let regions = children(of: country)
+        return regions.isEmpty ? country.hasData : regions.contains(where: \.hasData)
+    }
+
+    private var installed: [CountrySyncService.CountryStatus] {
+        visible.filter { isDownloaded($0) }
+    }
     private var available: [CountrySyncService.CountryStatus] {
-        visible.filter { ($0.hasData || !children(of: $0).isEmpty) && !$0.isInstalled }
+        visible.filter { isOffered($0) && !isDownloaded($0) }
     }
     private var unsurveyed: [CountrySyncService.CountryStatus] {
-        visible.filter { $0.isUnsurveyed && !$0.isInstalled && children(of: $0).isEmpty }
+        visible.filter { $0.isUnsurveyed && !isDownloaded($0) && !isOffered($0) }
     }
     private var knownEmpty: [CountrySyncService.CountryStatus] {
         visible.filter { $0.isKnownEmpty && !$0.isInstalled }
@@ -233,7 +256,14 @@ struct CountryDownloadView: View {
 
         let unit = available == 1 ? "region" : "regions"
         var parts = ["\(available) \(unit)", "\(cameras.formatted()) cameras"]
-        if installed > 0 { parts.append("\(installed) downloaded") }
+
+        // "2 of 2" rather than "2 downloaded", so a country whose regions are
+        // all present looks finished and one with more to take does not.
+        if installed == available {
+            parts.append(available == 1 ? "downloaded" : "all downloaded")
+        } else if installed > 0 {
+            parts.append("\(installed) of \(available) downloaded")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -381,8 +411,17 @@ struct CountryDownloadView: View {
                 .foregroundStyle(.green)
                 .accessibilityLabel("Installed")
         } else if country.hasData {
-            Button("Get") { Task { await sync?.download(country.code) } }
-                .buttonStyle(.glassProminent)
+            Button("Get") {
+                // Somewhere restricted, the driver reads the law first. Not a
+                // block: an adult in a jurisdiction we have not checked gets to
+                // decide, but they decide knowing which law applies.
+                if country.hasLegalNotice, !model.settings.hasAcceptedLegal(country.code) {
+                    pendingLegal = country
+                } else {
+                    Task { await sync?.download(country.code) }
+                }
+            }
+            .buttonStyle(.glassProminent)
         } else {
             // Nothing to offer, and a disabled button that can never be tapped
             // is just clutter.

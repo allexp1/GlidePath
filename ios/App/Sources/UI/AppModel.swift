@@ -30,6 +30,8 @@ final class AppModel {
     private(set) var monitor: DriveMonitor?
     private(set) var store: LocalCameraStore?
 
+    let driving = DrivingDetector()
+
     /// A value type, so `didSet` fires when a view toggles any single setting.
     /// A reference type here would only notify on replacement, and every
     /// settings toggle would silently fail to reach the voice and the monitor.
@@ -108,6 +110,26 @@ final class AppModel {
 
     /// Starting and stopping the SDK from the toggle, so "off" means the
     /// library is shut down rather than merely unused.
+    /// Files an anonymous report about one camera.
+    ///
+    /// The only write this app makes, and the only request that carries a
+    /// coordinate - the camera's own, which is already public data the phone
+    /// downloaded. Not the driver's position, and only on an explicit tap.
+    func reportCamera(_ camera: ZonexploCore.Camera, kind: CameraDetailSheet.ReportKind) async -> Bool {
+        guard let client = sync?.client else { return false }
+        do {
+            try await client.insert([
+                "country_code": camera.countryCode,
+                "kind": kind.rawValue,
+                "camera_id": camera.id,
+                "location": "SRID=4326;POINT(\(camera.coordinate.longitude) \(camera.coordinate.latitude))"
+            ], into: "pending_reports")
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func applyAnalyticsSetting() {
         if settings.analyticsEnabled {
             Analytics.start(enabled: true)
@@ -119,8 +141,23 @@ final class AppModel {
         }
     }
 
+    /// Motion monitoring follows the setting, and is never left running for a
+    /// feature that has been turned off.
+    private func applyDrivingDetection() {
+        guard settings.autoStartWhenDriving, settings.hasSeenOnboarding else {
+            driving.stop()
+            return
+        }
+        driving.onDrivingStarted = { [weak self] in
+            guard let self, !self.settings.isWatching else { return }
+            self.startMonitoring()
+        }
+        driving.start()
+    }
+
     private func applySettings() {
         applyAnalyticsSetting()
+        applyDrivingDetection()
         voice.settings = settings.voiceSettings
         monitor?.settings = settings.driveSettings
     }
@@ -156,6 +193,16 @@ struct AppSettings: Equatable {
     /// onboarding, and gating the SDK itself rather than the call sites.
     var analyticsEnabled: Bool
 
+    /// Start watching by itself once Core Motion is confident the phone is in a
+    /// moving car. The commonest real-world failure is forgetting to press
+    /// start, and a safety aid that needs remembering is one that will be
+    /// forgotten on the drive it was needed.
+    var autoStartWhenDriving: Bool
+
+    /// Countries whose legal notice the driver has read and accepted. Stored so
+    /// the warning appears once rather than nagging.
+    var acceptedLegalCodes: [String]
+
     var hasSeenOnboarding: Bool
 
     /// Whether the driver had the app watching the road when it was last
@@ -176,6 +223,8 @@ struct AppSettings: Equatable {
         voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
         speechRate = defaults.object(forKey: Keys.speechRate) as? Double ?? 1.05
         analyticsEnabled = defaults.object(forKey: Keys.analyticsEnabled) as? Bool ?? true
+        autoStartWhenDriving = defaults.object(forKey: Keys.autoStartWhenDriving) as? Bool ?? true
+        acceptedLegalCodes = defaults.stringArray(forKey: Keys.acceptedLegalCodes) ?? []
         hasSeenOnboarding = defaults.bool(forKey: Keys.hasSeenOnboarding)
         isWatching = defaults.bool(forKey: Keys.isWatching)
     }
@@ -194,8 +243,17 @@ struct AppSettings: Equatable {
         defaults.set(voiceIdentifier, forKey: Keys.voiceIdentifier)
         defaults.set(speechRate, forKey: Keys.speechRate)
         defaults.set(analyticsEnabled, forKey: Keys.analyticsEnabled)
+        defaults.set(autoStartWhenDriving, forKey: Keys.autoStartWhenDriving)
+        defaults.set(acceptedLegalCodes, forKey: Keys.acceptedLegalCodes)
         defaults.set(hasSeenOnboarding, forKey: Keys.hasSeenOnboarding)
         defaults.set(isWatching, forKey: Keys.isWatching)
+    }
+
+    func hasAcceptedLegal(_ code: String) -> Bool { acceptedLegalCodes.contains(code) }
+
+    mutating func acceptLegal(_ code: String) {
+        guard !acceptedLegalCodes.contains(code) else { return }
+        acceptedLegalCodes.append(code)
     }
 
     var driveSettings: DriveMonitor.Settings {
@@ -233,6 +291,8 @@ struct AppSettings: Equatable {
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
         static let analyticsEnabled = "settings.analyticsEnabled"
+        static let autoStartWhenDriving = "settings.autoStartWhenDriving"
+        static let acceptedLegalCodes = "settings.acceptedLegalCodes"
         static let hasSeenOnboarding = "settings.hasSeenOnboarding"
         static let isWatching = "settings.isWatching"
     }

@@ -1,6 +1,7 @@
 import ZonexploCore
 import MapKit
 import SwiftUI
+import UIKit
 
 /// The home screen: a map you are not meant to look at.
 ///
@@ -10,6 +11,7 @@ import SwiftUI
 /// over the screen and the map becomes background texture.
 struct HomeView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
 
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var selectedCamera: ZonexploCore.Camera?
@@ -25,8 +27,9 @@ struct HomeView: View {
             // own controls end up there too. These live outside the map, so they
             // inset properly, and they match the app's glass styling instead of
             // MapKit's stock chrome.
-            VStack(spacing: 0) {
+            VStack(spacing: 8) {
                 topControls
+                permissionBanner
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -70,12 +73,74 @@ struct HomeView: View {
             CameraDetailSheet(
                 camera: tapped,
                 units: model.settings.units,
-                from: model.location.latestFix?.coordinate
+                from: model.location.latestFix?.coordinate,
+                report: { kind in await model.reportCamera(tapped, kind: kind) }
             )
         }
     }
 
     // MARK: - Controls
+
+    /// The one failure the driver cannot see for themselves.
+    ///
+    /// Without Always, iOS will not wake the app for a geofence, so no warning
+    /// can be spoken with the phone locked - which is every warning that
+    /// matters, because the phone is in a cradle showing a navigator or in a
+    /// pocket. The app looks like it is working: the map moves, the card says
+    /// "watching the road", and nothing is ever announced.
+    ///
+    /// It lives on the home screen rather than in Settings because nobody
+    /// visits Settings to discover a problem they do not know they have.
+    @ViewBuilder
+    private var permissionBanner: some View {
+        if let message = permissionProblem {
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(message.title).font(.subheadline.weight(.semibold))
+                        Text(message.detail).font(.caption)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .zonexploGlass(cornerRadius: 18)
+            .accessibilityHint("Opens iOS Settings")
+        }
+    }
+
+    private var permissionProblem: (title: String, detail: String)? {
+        switch model.location.authorizationStatus {
+        case .authorizedAlways:
+            return nil
+        case .authorizedWhenInUse:
+            return (
+                "Warnings are off when the screen is locked",
+                "Zonexplo needs Always to warn you with another app on screen. Tap to fix."
+            )
+        case .denied, .restricted:
+            return (
+                "Zonexplo cannot see where you are",
+                "Location is turned off, so nothing can be announced. Tap to fix."
+            )
+        case .notDetermined:
+            return (
+                "Location access not granted yet",
+                "Nothing can be announced until it is. Tap to fix."
+            )
+        @unknown default:
+            return nil
+        }
+    }
 
     private var topControls: some View {
         GlassEffectContainer(spacing: 10) {

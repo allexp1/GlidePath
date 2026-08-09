@@ -157,6 +157,38 @@ struct SupabaseREST: Sendable {
         return try Self.decoder.decode([T].self, from: data)
     }
 
+    /// Files one row. The only write this app makes.
+    ///
+    /// Everything else here is an anonymous read of public data; this is a
+    /// driver telling us a camera is wrong. It carries a coordinate, which is
+    /// the one thing the app otherwise never sends - so it happens exactly
+    /// once, on an explicit tap, and never on a timer or in the background.
+    func insert(_ body: [String: any Sendable], into table: String) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "rest/v1/\(table)"))
+        request.httpMethod = "POST"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Ask for nothing back: the row is invisible to anon by design, and
+        // requesting a representation earns a 401 rather than the row.
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw SyncError.transport(error.localizedDescription)
+        }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let text = String(data: data, encoding: .utf8) ?? ""
+            throw SyncError.http(status: http.statusCode, body: String(text.prefix(400)))
+        }
+    }
+
     // MARK: - Coding
 
     /// PostgreSQL emits timestamps with microsecond precision and a `+00:00`
@@ -206,6 +238,12 @@ struct CountryDTO: Decodable, Sendable {
     /// Set on a subdivision, naming the country it belongs to. Nil on a
     /// country. The app nests these rather than listing them alongside.
     let parentCode: String?
+
+    /// Whether warning about cameras is restricted here, and the wording to
+    /// show before the country downloads. Optional so a build talking to a
+    /// project without the migration still decodes.
+    let legalStance: String?
+    let legalNote: String?
     let datasetVersion: Int
     let minCompatibleVersion: Int
     let cameraCount: Int

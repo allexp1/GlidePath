@@ -94,8 +94,9 @@ final class CountrySyncService {
                         INSERT INTO country
                             (code, name, parent_code, dataset_version, min_compatible_version,
                              camera_count, zone_count, last_synced_at,
-                             road_limit_version, road_limit_count)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             road_limit_version, road_limit_count,
+                             legal_stance, legal_note)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(code) DO UPDATE SET
                             name = excluded.name,
                             parent_code = excluded.parent_code,
@@ -105,7 +106,9 @@ final class CountrySyncService {
                             zone_count = excluded.zone_count,
                             last_synced_at = excluded.last_synced_at,
                             road_limit_version = excluded.road_limit_version,
-                            road_limit_count = excluded.road_limit_count
+                            road_limit_count = excluded.road_limit_count,
+                            legal_stance = excluded.legal_stance,
+                            legal_note = excluded.legal_note
                         """,
                     arguments: [
                         country.code,
@@ -119,7 +122,9 @@ final class CountrySyncService {
                         // Nil on a project that has not applied the road-limit
                         // migration, which reads correctly as "none available".
                         country.roadLimitVersion ?? 0,
-                        country.roadLimitCount ?? 0
+                        country.roadLimitCount ?? 0,
+                        country.legalStance,
+                        country.legalNote
                     ]
                 )
             }
@@ -141,7 +146,9 @@ final class CountrySyncService {
                     lastSyncedAt: row["last_synced_at"],
                     roadLimitVersion: row["road_limit_version"] ?? 0,
                     roadLimitCount: row["road_limit_count"] ?? 0,
-                    roadLimitsInstalledVersion: row["road_limits_installed_version"]
+                    roadLimitsInstalledVersion: row["road_limits_installed_version"],
+                    legalStance: row["legal_stance"],
+                    legalNote: row["legal_note"]
                 )
             }
         }

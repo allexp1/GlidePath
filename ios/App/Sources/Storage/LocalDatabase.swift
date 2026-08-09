@@ -220,6 +220,16 @@ final class LocalDatabase: @unchecked Sendable {
             }
         }
 
+        // Where warning about cameras is restricted. Held server-side so legal
+        // advice can change without an App Store release, and cached here so
+        // the notice still appears with no signal.
+        migrator.registerMigration("v5_legal_stance") { db in
+            try db.alter(table: "country") { table in
+                table.add(column: "legal_stance", .text)
+                table.add(column: "legal_note", .text)
+            }
+        }
+
         return migrator
     }
 

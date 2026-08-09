@@ -136,6 +136,37 @@ struct LocalCameraStore: CameraDataStore {
         }
     }
 
+    /// The most recent completed zones, newest first.
+    ///
+    /// Bounded rather than unbounded: this is a driving app, the rows accrue
+    /// for years, and nobody scrolls to the four-hundredth. The cap is on the
+    /// query so a long-lived install cannot turn opening a screen into reading
+    /// the whole table.
+    func recentZoneRuns(limit: Int = 200) async throws -> [ZoneRun] {
+        try await database.pool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, zone_name, entered_at, exited_at, average_kph, limit_kph, passed
+                      FROM zone_run
+                     ORDER BY entered_at DESC
+                     LIMIT ?
+                    """,
+                arguments: [limit]
+            ).map { row in
+                ZoneRun(
+                    id: row["id"],
+                    zoneName: row["zone_name"],
+                    enteredAt: row["entered_at"],
+                    exitedAt: row["exited_at"],
+                    averageKph: row["average_kph"],
+                    limitKph: row["limit_kph"],
+                    passed: row["passed"]
+                )
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func restStops(forZonesIn zoneIDs: [String]) async throws -> [String: [RestStop]] {

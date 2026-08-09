@@ -30,6 +30,21 @@ extension CountrySyncService {
         let roadLimitCount: Int
         let roadLimitsInstalledVersion: Int?
 
+        /// Raw so an unknown value from a newer server degrades to "no notice"
+        /// rather than failing to decode the whole catalogue.
+        let legalStance: String?
+        let legalNote: String?
+
+        /// Somewhere the driver should be told the law before downloading.
+        var hasLegalNotice: Bool {
+            legalNote != nil && legalStance != nil && legalStance != "unrestricted"
+        }
+
+        /// The strongest wording is reserved for where the device itself is
+        /// banned, because "you may be fined" and "this is illegal to own" are
+        /// not the same warning.
+        var isProhibited: Bool { legalStance == "prohibited" }
+
         var id: String { code }
         var isInstalled: Bool { installedVersion != nil }
 
