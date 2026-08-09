@@ -55,6 +55,33 @@ async function main(): Promise<number> {
   const tileArg = args.find((arg) => arg.startsWith('--tile='))
   const tileDegrees = tileArg ? Number(tileArg.slice('--tile='.length)) : undefined
 
+  // An explicit bounding box, because a country's own one can be mostly ocean.
+  //
+  // Spain's boundary relation spans 27.4N to 44.0N - the Canary Islands are
+  // Spain - so tiling its bbox is 1,564 tiles at half a degree, of which some
+  // 70% are open Atlantic that still cost a full Overpass query each. Mainland
+  // Spain is 416. The area filter already keeps a tile from picking up a
+  // neighbour's roads, so narrowing the box only decides where to look, never
+  // what counts as Spanish.
+  //
+  // It also removes the boundary query from a resume. Without it, every restart
+  // re-resolves the country from Overpass, and one throttled response there
+  // ends a run that had hundreds of tiles banked.
+  //
+  // What it costs: anything outside the box is silently not harvested, and the
+  // run still reports "covered the country". Use it where the omission is
+  // deliberate and known.
+  const bboxArg = args.find((arg) => arg.startsWith('--bbox='))
+  let bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number } | undefined
+  if (bboxArg) {
+    const parts = bboxArg.slice('--bbox='.length).split(',').map(Number)
+    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+      console.error(`--bbox needs minLat,minLon,maxLat,maxLon - got "${bboxArg}"`)
+      return 2
+    }
+    bounds = { minLat: parts[0], minLon: parts[1], maxLat: parts[2], maxLon: parts[3] }
+  }
+
   if (!requested || !/^[A-Za-z]{2}(-[A-Za-z0-9]{1,3})?$/.test(requested)) {
     console.error(
       'Usage: seed_limits.ts <ISO 3166-1 alpha-2 or 3166-2 subdivision> [--tile=DEGREES] [--dry-run] [--restart]'
@@ -126,6 +153,7 @@ async function main(): Promise<number> {
   const report = await syncRoadLimits(client as unknown as DatabaseClient, code, iso, {
     dryRun,
     tileDegrees,
+    bounds,
     completedTiles,
     log: (message) => console.log(`  ${message}`),
     onTileComplete: async (tile) => {
