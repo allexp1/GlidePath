@@ -109,7 +109,37 @@ export async function syncCountry(
   const cameraResponse = await runOverpassQuery(pointCameraQuery(isoCode), options.overpass)
 
   log(`[${countryCode}] querying Overpass for average-speed sections`)
-  const zoneResponse = await runOverpassQuery(averageSpeedZoneQuery(isoCode), options.overpass)
+  let zoneResponse = await runOverpassQuery(averageSpeedZoneQuery(isoCode), options.overpass)
+
+  // Ask twice before believing a country has no average-speed sections.
+  //
+  // The camera query above proves the area resolved. If it came back with
+  // thousands of nodes and this one came back with literally nothing, the two
+  // statements are hard to hold together: the section query is not more
+  // fragile, it is just larger, and a loaded Overpass answers a large query
+  // with an empty 200 rather than an error.
+  //
+  // Belgium is why this exists. It has 158 sections mapped as
+  // `Trajectcontrole`, and a sweep harvested it as zero zones with no rejection
+  // reasons at all - the signature of an empty response rather than of
+  // relations that failed validation. Minutes later the same query returned all
+  // 158.
+  //
+  // Countries with genuinely no sections - Finland, Sweden - pay one extra
+  // query for this and still report zero, which is the correct answer for them.
+  if (zoneResponse.elements.length === 0 && cameraResponse.elements.length > 50) {
+    log(`[${countryCode}] no sections came back; asking again before believing it`)
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    zoneResponse = await runOverpassQuery(averageSpeedZoneQuery(isoCode), options.overpass)
+
+    if (zoneResponse.elements.length > 0) {
+      warnings.push(
+        'the first section query returned nothing and the second returned ' +
+          `${zoneResponse.elements.length} elements; Overpass was answering empty rather ` +
+          'than this country having no average-speed sections'
+      )
+    }
+  }
 
   // Two queries, one area filter. The section query finding the country proves
   // the area resolved, so a completely empty camera response is suspect: Overpass
