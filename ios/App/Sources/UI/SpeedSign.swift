@@ -61,6 +61,13 @@ struct SpeedSign: View {
                 .monospacedDigit()
                 .foregroundStyle(isOver ? .white : .black)
                 .contentTransition(.numericText())
+                // Three digits at 46pt are wider than the face, and the number
+                // that is three digits is *your speed on a motorway* — the one
+                // reading this exists to deliver. Shrinking only when it does
+                // not fit keeps 50 and 90 at full size, which is almost always.
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 12)
                 .frame(width: 104, height: 104)
                 .background(isOver ? Color.red : Color.white, in: Circle())
                 .overlay(
@@ -126,6 +133,9 @@ struct CameraApproachBanner: View {
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 5)
                     .frame(width: 44, height: 44)
                     .background(.white, in: Circle())
                     .overlay(Circle().strokeBorder(.red, lineWidth: 5))
