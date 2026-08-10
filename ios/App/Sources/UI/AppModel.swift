@@ -98,14 +98,20 @@ final class AppModel {
         monitor?.start()
         // Only the transition. scenePhase re-asserts this on every activation,
         // and counting that would report a number that means "app opened".
-        if !wasWatching { Analytics.capture(.watchStarted) }
+        if !wasWatching {
+            Analytics.capture(.watchStarted)
+            Diagnostics.shared.record(.app, "started watching the road")
+        }
     }
 
     func stopMonitoring() {
         let wasWatching = settings.isWatching
         settings.isWatching = false
         monitor?.stop()
-        if wasWatching { Analytics.capture(.watchStopped) }
+        if wasWatching {
+            Analytics.capture(.watchStopped)
+            Diagnostics.shared.record(.app, "stopped watching the road")
+        }
     }
 
     /// Starting and stopping the SDK from the toggle, so "off" means the

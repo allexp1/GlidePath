@@ -111,6 +111,7 @@ struct SettingsView: View {
                 }
 
                 NavigationLink("Drive history") { DriveHistoryView() }
+                NavigationLink("Diagnostics") { DiagnosticsView() }
 
                 LabeledContent("Position updates", value: trackingSummary)
             } header: {

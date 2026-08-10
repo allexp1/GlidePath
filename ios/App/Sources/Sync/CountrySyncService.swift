@@ -199,8 +199,10 @@ final class CountrySyncService {
             // download list already shows, and knowing which countries are
             // worth harvesting next is the point of collecting anything.
             Analytics.capture(.countryDownloaded, ["country": code, "full": plan.isFull])
+            Diagnostics.shared.record(.data, "downloaded \(code)")
         } catch {
             progress = .failed(country: code, message: error.localizedDescription)
+            Diagnostics.shared.record(.data, "download of \(code) FAILED: \(error.localizedDescription)")
         }
     }
 

@@ -83,6 +83,10 @@ final class VoiceCoach: NSObject, CoachVoice {
     func refreshVoices() {
         availableVoices = VoiceCatalogue.installed
         chosenVoice = nil
+        Diagnostics.shared.record(
+            .voice,
+            "\(availableVoices.count) usable voices installed for \(VoiceCatalogue.spokenLanguage)"
+        )
     }
 
     /// The voice to speak with.
@@ -110,7 +114,11 @@ final class VoiceCoach: NSObject, CoachVoice {
     // MARK: - CoachVoice
 
     func speak(_ line: String, urgent: Bool) {
-        guard settings.enabled, !line.isEmpty else { return }
+        guard settings.enabled else {
+            Diagnostics.shared.record(.voice, "not spoken, spoken alerts are off: \"\(line)\"")
+            return
+        }
+        guard !line.isEmpty else { return }
 
         if urgent, synthesizer.isSpeaking {
             // An immediate stop clips mid-word, which sounds broken. Ending at
@@ -128,6 +136,10 @@ final class VoiceCoach: NSObject, CoachVoice {
         utterance.voice = currentVoice()
 
         pendingUtterances += 1
+        Diagnostics.shared.record(
+            .voice,
+            "speaking\(urgent ? " (urgent)" : "") as \(utterance.voice?.name ?? "system default"): \"\(line)\""
+        )
         synthesizer.speak(utterance)
     }
 
@@ -167,6 +179,12 @@ final class VoiceCoach: NSObject, CoachVoice {
         } catch {
             // Losing the session means losing the voice, not the app. The UI
             // still shows live numbers, so failing quietly is right here.
+            // The commonest cause of "I heard nothing" that is not a setting:
+            // another app holding the session, or a route that went away.
+            Diagnostics.shared.record(
+                .voice,
+                "AUDIO SESSION REFUSED - nothing can be spoken: \(error.localizedDescription)"
+            )
             print("[Zonexplo] could not activate the audio session: \(error.localizedDescription)")
         }
     }

@@ -290,19 +290,35 @@ final class DriveMonitor {
         for event in events {
             switch event {
             case .entered:
+                Diagnostics.shared.record(
+                    .zone,
+                    "entered \(activeZone?.name ?? "an unnamed zone"), "
+                        + "announcements \(settings.announceZones ? "on" : "OFF")"
+                )
                 if settings.announceZones, let zone = activeZone {
                     speak(phrasebook.zoneEntry(zone), urgent: true)
                 }
 
             case let .advice(advice):
                 currentAdvice = advice
-                guard announcer.shouldAnnounce(advice, at: fix.timestamp) else { continue }
+                guard announcer.shouldAnnounce(advice, at: fix.timestamp) else {
+                    Diagnostics.shared.record(
+                        .zone,
+                        "advice computed (\(advice.tier)) but held back - too soon after the last line"
+                    )
+                    continue
+                }
                 if let line = phrasebook.coaching(advice) {
                     speak(line, urgent: advice.tier != .normal)
                 }
 
             case let .completed(outcome):
                 lastOutcome = outcome
+                Diagnostics.shared.record(
+                    .zone,
+                    "completed: averaged \(Int(outcome.averageKph.rounded())) in a "
+                        + "\(Int(outcome.limitKph.rounded())), \(outcome.passed ? "passed" : "over")"
+                )
                 if settings.announceZones {
                     speak(phrasebook.zoneExit(outcome), urgent: false)
                 }
