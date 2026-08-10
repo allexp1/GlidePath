@@ -332,10 +332,10 @@ struct OnboardingScene: View {
             let raw = time * 0.07 + Double(index) / 7.0
             let depth = raw - raw.rounded(.down)
             let y = size.height * 0.06 + CGFloat(index % 3) * size.height * 0.035
-            let x = size.width * CGFloat(u)
+            let x = size.width * CGFloat(depth)
             context.fill(
                 Path(ellipseIn: CGRect(x: x, y: y, width: 2.5, height: 2.5)),
-                with: .color(accent.opacity(0.18 + 0.2 * sin(u * .pi)))
+                with: .color(accent.opacity(0.18 + 0.2 * sin(depth * .pi)))
             )
         }
     }
