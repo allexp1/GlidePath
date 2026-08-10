@@ -186,6 +186,17 @@ public struct Phrasebook: Sendable {
         }
     }
 
+    /// A speed written down, where the unit has to be there.
+    ///
+    /// The bare form above is right for speech and right inside a roundel,
+    /// where the shape of a speed limit sign says what the number is. It is
+    /// wrong in a table row and in a sentence, and it is worst exactly where
+    /// this is used: a limit converted from a US sign comes out as "89", which
+    /// reads as a mistake until it says "89 km/h".
+    public func writtenSpeed(_ kph: Double) -> String {
+        "\(speedPhrase(kph)) \(units == .metric ? "km/h" : "mph")"
+    }
+
     public func distancePhrase(_ meters: Double) -> String {
         switch units {
         case .metric:

@@ -88,7 +88,8 @@ struct HomeView: View {
                 camera: tapped,
                 units: model.settings.units,
                 from: model.location.latestFix?.coordinate,
-                report: { kind in await model.reportCamera(tapped, kind: kind) }
+                report: { kind in await model.reportCamera(tapped, kind: kind) },
+                postedLimit: { await model.postedLimit(at: tapped) }
             )
         }
     }

@@ -159,6 +159,31 @@ final class AppModel {
         }
     }
 
+    /// The posted limit where a camera stands, when the downloaded road data
+    /// can establish one beyond doubt.
+    ///
+    /// Most cameras carry no limit of their own - under five per cent do in
+    /// California - so without this the detail sheet is silent about the one
+    /// number anyone taps a speed camera to find out. The refusing is done in
+    /// `RoadLimitLookup`; this only fetches the roads to ask about.
+    func postedLimit(at camera: ZonexploCore.Camera) async -> RoadLimitLookup.Result? {
+        guard let store else { return nil }
+
+        // Wider than the corridor the lookup applies, because a road is stored
+        // as a whole way: the nearest recorded point of a long road can sit far
+        // from where it passes the camera.
+        let candidates = (try? await store.roadLimits(
+            near: camera.coordinate,
+            radiusMeters: 250
+        )) ?? []
+
+        return RoadLimitLookup.limit(
+            at: camera.coordinate,
+            facing: camera.directionDegrees,
+            candidates: candidates
+        )
+    }
+
     private func applyAnalyticsSetting() {
         if settings.analyticsEnabled {
             Analytics.start(enabled: true)

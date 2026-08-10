@@ -21,8 +21,18 @@ struct CameraDetailSheet: View {
     /// neither of which the sheet can work out for itself.
     let report: ((ReportKind) async -> Bool)?
 
+    /// The limit on the road this camera stands on, looked up in the
+    /// downloaded road data. Nil-returning is normal and expected.
+    var postedLimit: (() async -> RoadLimitLookup.Result?)?
+
     @Environment(\.dismiss) private var dismiss
     @State private var reportState = ReportState.idle
+    @State private var posted: RoadLimitLookup.Result?
+
+    /// Until the lookup has answered there is nothing truthful to say, and
+    /// "not recorded" flashing up before the road data arrives would be a lie
+    /// that corrects itself - the most confusing kind.
+    @State private var lookupFinished = false
 
     private var phrasebook: Phrasebook { Phrasebook(units: units) }
 
@@ -57,6 +67,13 @@ struct CameraDetailSheet: View {
 
                     facts
 
+                    if let note = limitNote {
+                        Text(note)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if !camera.verified {
                         unverifiedNote
                     }
@@ -76,6 +93,10 @@ struct CameraDetailSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .task {
+            posted = await postedLimit?()
+            lookupFinished = true
+        }
     }
 
     // MARK: - Pieces
@@ -103,10 +124,8 @@ struct CameraDetailSheet: View {
 
     private var facts: some View {
         VStack(spacing: 0) {
-            if let limit = camera.speedLimitKph {
-                fact("Speed limit", phrasebook.speedPhrase(limit), symbol: "speedometer")
-                divider
-            }
+            limitFact
+            divider
 
             fact("Direction", directionText, symbol: "arrow.triangle.turn.up.right.diamond")
 
@@ -127,6 +146,44 @@ struct CameraDetailSheet: View {
         }
         .padding(4)
         .zonexploGlass(cornerRadius: 20)
+    }
+
+    /// Always present, because a row that disappears is how "we do not know"
+    /// becomes indistinguishable from "this screen is broken". Under five per
+    /// cent of Californian cameras carry a limit of their own, so the absent
+    /// case is the common one and has to be a sentence rather than a gap.
+    @ViewBuilder
+    private var limitFact: some View {
+        if let limit = camera.speedLimitKph {
+            fact("Speed limit", phrasebook.writtenSpeed(limit), symbol: "speedometer")
+        } else if let posted {
+            fact("Limit on this road", phrasebook.writtenSpeed(posted.limitKph), symbol: "speedometer")
+        } else if lookupFinished {
+            fact("Speed limit", "Not recorded", symbol: "speedometer")
+        } else {
+            fact("Speed limit", "Checking", symbol: "speedometer")
+        }
+    }
+
+    /// What the number above is, and is not.
+    ///
+    /// The distinction matters enough to spend three lines on: a limit tagged
+    /// on the camera is what that camera enforces, and a limit read off the
+    /// road underneath it is a very good indication that is nonetheless not the
+    /// same claim. Presenting the second as the first is precisely the silent
+    /// wrong answer this app is built to avoid.
+    private var limitNote: String? {
+        guard camera.speedLimitKph == nil, lookupFinished else { return nil }
+
+        guard let posted else {
+            return "No limit is recorded against this camera, and none is downloaded for the "
+                + "road it stands on. Zonexplo will not guess at one."
+        }
+
+        let road = posted.roadRef ?? posted.roadName ?? "the road it stands on"
+        return "No limit is recorded against this camera itself. "
+            + "\(phrasebook.writtenSpeed(posted.limitKph)) is the limit on \(road), which is "
+            + "usually what a camera there enforces but is not the same claim."
     }
 
     private var divider: some View {

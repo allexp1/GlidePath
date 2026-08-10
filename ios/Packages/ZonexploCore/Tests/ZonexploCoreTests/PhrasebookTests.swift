@@ -219,4 +219,12 @@ final class PhrasebookTests: XCTestCase {
             XCTAssertFalse(line.lowercased().contains(word), "\(line) should not mention \(word)")
         }
     }
+
+    /// Written speeds carry their unit. A limit converted from a US sign is the
+    /// case that makes this non-optional: "89" alone reads as a bug.
+    func testWrittenSpeedCarriesItsUnit() {
+        XCTAssertEqual(Phrasebook(units: .metric).writtenSpeed(89), "89 km/h")
+        XCTAssertEqual(Phrasebook(units: .imperial).writtenSpeed(89), "55 mph")
+        XCTAssertEqual(Phrasebook(units: .metric).speedPhrase(89), "89")
+    }
 }
