@@ -16,7 +16,12 @@ struct OnboardingView: View {
 
     @State private var step: Step = .intro
 
-    private enum Step {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Internal rather than private: the scene behind the panels is drawn from
+    /// the same step, and a second source of truth for "where are we" is how
+    /// the words and the picture end up disagreeing.
+    enum Step: Int, CaseIterable {
         case intro
         case whenInUse
         case always
@@ -24,17 +29,62 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            content
-                .padding(28)
-                .zonexploGlass(cornerRadius: 34)
-                .padding(.horizontal, 20)
-            Spacer()
-            footer
+        ZStack {
+            OnboardingScene(step: step)
+
+            GeometryReader { proxy in
+              VStack(spacing: 0) {
+                // A fixed window onto the road. Centring the panel instead put
+                // it straight over the vanishing point, which hid the horizon,
+                // the glow and every gantry - the whole reason the scene is
+                // there - behind the words describing them.
+                Color.clear.frame(height: proxy.size.height * 0.42)
+
+                content
+                    .padding(28)
+                    .zonexploGlass(cornerRadius: 34)
+                    .padding(.horizontal, 20)
+                    // Each panel arrives from the direction of travel and the
+                    // one before it leaves the same way, so the sequence reads
+                    // as continuing rather than as four separate screens.
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                    .id(step)
+
+                Spacer(minLength: 0)
+
+                progress
+                footer
+              }
+            }
         }
-        .background(backdrop)
-        .animation(.smooth, value: step)
+        .preferredColorScheme(.dark)
+        .animation(motion, value: step)
+    }
+
+    /// One authored curve for the whole flow. Exponential ease-out, because a
+    /// panel that decelerates into place feels arrived-at, and a linear one
+    /// feels dragged.
+    private var motion: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.55, dampingFraction: 0.86)
+    }
+
+    /// Where the driver is in the sequence. Four steps is short enough that a
+    /// bar would be over-instrumentation, and long enough that no indication at
+    /// all leaves people wondering how much of this there is.
+    private var progress: some View {
+        HStack(spacing: 7) {
+            ForEach(Step.allCases, id: \.rawValue) { item in
+                Capsule()
+                    .fill(item == step ? Color.white : Color.white.opacity(0.28))
+                    .frame(width: item == step ? 22 : 7, height: 7)
+            }
+        }
+        .padding(.bottom, 20)
+        .accessibilityElement()
+        .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
     }
 
     // MARK: - Steps
@@ -99,16 +149,23 @@ struct OnboardingView: View {
         VStack(spacing: 18) {
             Image(systemName: symbol)
                 .font(.system(size: 52, weight: .light))
-                .foregroundStyle(.tint)
+                .foregroundStyle(OnboardingScene.accent(for: step))
                 .symbolRenderingMode(.hierarchical)
 
             Text(title)
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
+                // Without this the longest title truncates to one line -
+                // "It needs to know where you a..." - because the panel offers
+                // a width and Text takes it as a licence to clip.
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(text)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                // Tinted off the scene's own blue rather than grey, which on a
+                // navy backdrop reads as dirt.
+                .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 0.95))
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -120,6 +177,10 @@ struct OnboardingView: View {
         VStack(spacing: 12) {
             Button(primaryTitle) { advance() }
                 .buttonStyle(.glassProminent)
+                // The call to action joins the scene it is standing on. A cyan
+                // button on the mint screen was the last thing still insisting
+                // all four steps were the same screen.
+                .tint(OnboardingScene.accent(for: step))
                 .controlSize(.extraLarge)
                 .frame(maxWidth: .infinity)
 
@@ -167,13 +228,4 @@ struct OnboardingView: View {
         }
     }
 
-    private var backdrop: some View {
-        LinearGradient(
-            colors: [.accentColor.opacity(0.35), .clear],
-            startPoint: .top,
-            endPoint: .center
-        )
-        .ignoresSafeArea()
-        .background(Color(.systemBackground))
-    }
 }

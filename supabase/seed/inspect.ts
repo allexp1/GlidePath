@@ -61,6 +61,14 @@ async function inspectPointCameras(iso: string): Promise<void> {
   let elements: OverpassElement[]
   try {
     elements = (await runOverpassQuery(pointCameraQuery(iso))).elements
+
+    if (elements.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      elements = (await runOverpassQuery(pointCameraQuery(iso))).elements
+      if (elements.length > 0) {
+        console.log('  (the first query came back empty; this is the second answer)')
+      }
+    }
   } catch (error) {
     console.log(`  query failed: ${error instanceof Error ? error.message : String(error)}`)
     return
@@ -126,6 +134,23 @@ async function inspectZones(iso: string): Promise<void> {
   let elements: OverpassElement[]
   try {
     elements = (await runOverpassQuery(averageSpeedZoneQuery(iso))).elements
+
+    // Ask twice before reporting that a country has no sections.
+    //
+    // This tool exists to explain why a country loaded nothing, so a false
+    // zero here is worse than anywhere else in the codebase: it answers the
+    // exact question it was run to answer, with the wrong answer, and sounds
+    // authoritative doing it. The United Kingdom reported 0 relations on one
+    // run and 70 on the next - a loaded Overpass returns an empty 200 rather
+    // than an error - and the first reading would have concluded that SPECS is
+    // not mapped in OSM at all.
+    if (elements.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      elements = (await runOverpassQuery(averageSpeedZoneQuery(iso))).elements
+      if (elements.length > 0) {
+        console.log('  (the first query came back empty; this is the second answer)')
+      }
+    }
   } catch (error) {
     console.log(`  query failed: ${error instanceof Error ? error.message : String(error)}`)
     return
