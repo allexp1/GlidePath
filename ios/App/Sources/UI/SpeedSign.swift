@@ -36,31 +36,39 @@ struct SpeedSign: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             if isOver {
                 // Only present when over. A permanent second number would make
                 // the compliant state busier than it needs to be.
+                // A miniature of the sign itself rather than a dark pill.
+                // Translucent black read as grey mush over a light map, which
+                // is most of the time this chip is on screen; white with a
+                // black numeral is legible over anything Apple Maps draws.
                 Text(phrasebook.speedPhrase(limitKph))
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 19, weight: .heavy, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.55), in: Capsule())
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 3)
+                    .background(.white, in: Capsule())
+                    .overlay(Capsule().strokeBorder(.black.opacity(0.85), lineWidth: 2.5))
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                     .transition(.scale.combined(with: .opacity))
             }
 
             Text(phrasebook.speedPhrase(headline))
-                .font(.system(size: 38, weight: .heavy, design: .rounded))
+                .font(.system(size: 46, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isOver ? .white : .black)
                 .contentTransition(.numericText())
-                .frame(width: 92, height: 92)
+                .frame(width: 104, height: 104)
                 .background(isOver ? Color.red : Color.white, in: Circle())
                 .overlay(
-                    Circle().strokeBorder(isOver ? Color.red : Color.green, lineWidth: 9)
+                    Circle().strokeBorder(isOver ? Color.red : Color.green, lineWidth: 10)
                 )
-                .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                // Enough shadow to hold an edge against a pale map without
+                // reading as a drop-shadowed rectangle.
+                .shadow(color: .black.opacity(0.4), radius: 7, y: 2)
         }
         .animation(.snappy(duration: 0.25), value: isOver)
         .animation(.snappy(duration: 0.25), value: headline)
