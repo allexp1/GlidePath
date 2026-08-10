@@ -34,11 +34,21 @@ struct OnboardingView: View {
 
             GeometryReader { proxy in
               VStack(spacing: 0) {
-                // A fixed window onto the road. Centring the panel instead put
-                // it straight over the vanishing point, which hid the horizon,
-                // the glow and every gantry - the whole reason the scene is
-                // there - behind the words describing them.
-                Color.clear.frame(height: proxy.size.height * 0.42)
+                // The window onto the scene. Centring the panel instead put it
+                // straight over the vanishing point, which hid the horizon, the
+                // glow and every gantry - the whole reason the scene is there -
+                // behind the words describing them.
+                //
+                // A range rather than a fixed height, and the lower priority of
+                // the two: the longest panel is the Always step, and against a
+                // fixed 42% it grew straight through the progress dots. The
+                // scene gives its space up before the copy does.
+                Color.clear
+                    .frame(
+                        minHeight: proxy.size.height * 0.24,
+                        maxHeight: proxy.size.height * 0.42
+                    )
+                    .layoutPriority(0)
 
                 content
                     .padding(28)
@@ -52,8 +62,9 @@ struct OnboardingView: View {
                         removal: .move(edge: .leading).combined(with: .opacity)
                     ))
                     .id(step)
+                    .layoutPriority(1)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 22)
 
                 progress
                 footer
@@ -82,7 +93,8 @@ struct OnboardingView: View {
                     .frame(width: item == step ? 22 : 7, height: 7)
             }
         }
-        .padding(.bottom, 20)
+        .padding(.top, 4)
+        .padding(.bottom, 18)
         .accessibilityElement()
         .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
     }

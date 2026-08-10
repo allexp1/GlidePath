@@ -342,64 +342,75 @@ struct OnboardingScene: View {
 
     // MARK: - 4. Coverage · fill
 
-    /// Tiles lighting outward from the centre. It is literally how the harvest
-    /// works — a country is covered tile by tile — and it ends with the map
-    /// lit and no connection needed to keep it.
+    /// Europe, with the covered countries filling one after another.
+    ///
+    /// Real boundaries rather than shapes: hand-drawn polygons were tried and
+    /// looked hand-drawn, and at this size a coastline is the only thing that
+    /// reads as a map. The outlines are Natural Earth 110m simplified to 0.18
+    /// degrees — the whole continent for 760 points.
+    ///
+    /// Uncovered countries stay as outline so the fill has something to be
+    /// filled *within*. A lit country floating on black says nothing about
+    /// where it is.
     private func drawCoverage(_ context: inout GraphicsContext, size: CGSize, time: Double) {
-        let centre = CGPoint(x: size.width / 2, y: size.height * 0.24)
-        halo(&context, at: centre, radius: size.width * 0.60, colour: accent, strength: 0.30)
+        let centre = CGPoint(x: size.width / 2, y: size.height * 0.23)
+        halo(&context, at: centre, radius: size.width * 0.62, colour: accent, strength: 0.22)
 
-        // Masked to a rough territory rather than drawn as a full-bleed grid.
-        // A rectangle running off both edges reads as wallpaper; a shape with
-        // an edge reads as a place, which is what is being downloaded.
-        let columns = 7
-        let rows = 7
-        let span = size.width * 0.66
-        let cell = span / CGFloat(columns)
-        let tile = cell * 0.80
-        let originX = centre.x - span / 2
-        let originY = centre.y - CGFloat(rows) * cell / 2
+        // The window, aspect-corrected on longitude. At 55 degrees north a
+        // degree of longitude covers about cos(55) of the ground a degree of
+        // latitude does, so x is what compresses; squashing y instead flattens
+        // the continent into a smear, which is what the first attempt did.
+        let minLon = -11.0, maxLon = 32.0, minLat = 35.0, maxLat = 71.5
+        let lonSquash = CGFloat(cos(55.0 * .pi / 180))
 
-        let cycle = (time.truncatingRemainder(dividingBy: 4.5)) / 4.5
+        let scaleLon = min(
+            size.width * 0.92 / CGFloat(maxLon - minLon),
+            size.height * 0.36 / CGFloat(maxLat - minLat) * lonSquash
+        )
+        let scaleLat = scaleLon / lonSquash
+        let boxWidth = CGFloat(maxLon - minLon) * scaleLon
+        let boxHeight = CGFloat(maxLat - minLat) * scaleLat
+        let originX = centre.x - boxWidth / 2
+        let originY = centre.y - boxHeight / 2
 
-        for row in 0..<rows {
-            for column in 0..<columns {
-                let dx = Double(column) - Double(columns - 1) / 2
-                let dy = Double(row) - Double(rows - 1) / 2
+        func project(_ lon: Double, _ lat: Double) -> CGPoint {
+            CGPoint(
+                x: originX + CGFloat(lon - minLon) * scaleLon,
+                y: originY + boxHeight - CGFloat(lat - minLat) * scaleLat
+            )
+        }
 
-                // Inside the territory, with the edge roughened by row so the
-                // outline is not a circle drawn in squares.
-                let wobble = 0.86 + 0.20 * sin(Double(row) * 1.7 + 1.1)
-                let radial = sqrt(pow(dx / 3.4, 2) + pow(dy / 3.2, 2))
-                guard radial <= wobble else { continue }
+        let order = EuropeMap.fillOrder
+        let cycle = time.truncatingRemainder(dividingBy: Double(order.count) * 1.15)
+        let activeIndex = Int(cycle / 1.15)
+        let within = (cycle / 1.15) - Double(activeIndex)
+        let active = order[min(activeIndex, order.count - 1)]
 
-                let x = originX + CGFloat(column) * cell
-                let y = originY + CGFloat(row) * cell
-
-                // Fill sweeps outward from the middle, holds, releases.
-                let lead = cycle - radial * 0.55
-                let lit: Double
-                if lead < 0 {
-                    lit = 0
-                } else if lead < 0.14 {
-                    lit = lead / 0.14
-                } else if lead < 0.66 {
-                    lit = 1
-                } else {
-                    lit = max(0, 1 - (lead - 0.66) / 0.18)
-                }
-
-                let rect = CGRect(x: x, y: y, width: tile, height: tile)
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: tile * 0.28),
-                    with: .color(accent.opacity(0.06 + lit * 0.42))
-                )
-                context.stroke(
-                    Path(roundedRect: rect, cornerRadius: tile * 0.28),
-                    with: .color(accent.opacity(0.16 + lit * 0.62)),
-                    lineWidth: 1
-                )
+        for (iso, ring) in EuropeMap.outlines {
+            var path = Path()
+            for (index, point) in ring.enumerated() {
+                let projected = project(point.0, point.1)
+                if index == 0 { path.move(to: projected) } else { path.addLine(to: projected) }
             }
+            path.closeSubpath()
+
+            let isCovered = EuropeMap.covered.contains(iso)
+            let isActive = iso == active
+            let filled = order.firstIndex(of: iso).map { $0 < activeIndex } ?? false
+
+            // Fills over the first third of its turn, then holds lit, so the
+            // map settles rather than blinking.
+            let fill: Double = isActive ? min(1, within / 0.32) : (filled ? 0.62 : 0)
+
+            context.fill(
+                path,
+                with: .color(accent.opacity((isCovered ? 0.07 : 0.035) + fill * 0.42))
+            )
+            context.stroke(
+                path,
+                with: .color(accent.opacity((isCovered ? 0.34 : 0.16) + fill * 0.55)),
+                style: StrokeStyle(lineWidth: isActive ? 1.8 : 0.9, lineJoin: .round)
+            )
         }
     }
 

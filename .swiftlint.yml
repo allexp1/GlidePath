@@ -6,6 +6,10 @@ included:
 excluded:
   - ios/Packages/ZonexploCore/.build
   - .build
+  # Generated coordinate data, not code anyone reads or edits by hand. It is
+  # 760 boundary points from Natural Earth, and wrapping them to satisfy a line
+  # limit would make a machine-produced table harder to diff, not easier.
+  - ios/App/Sources/UI/EuropeMap.swift
 
 disabled_rules:
   - todo
