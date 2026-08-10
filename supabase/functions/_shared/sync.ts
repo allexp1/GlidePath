@@ -106,7 +106,32 @@ export async function syncCountry(
   // ---- Fetch -------------------------------------------------------------
 
   log(`[${countryCode}] querying Overpass for point cameras`)
-  const cameraResponse = await runOverpassQuery(pointCameraQuery(isoCode), options.overpass)
+  let cameraResponse = await runOverpassQuery(pointCameraQuery(isoCode), options.overpass)
+
+  // Ask twice before believing a country has no cameras either.
+  //
+  // The section-query retry below was added after Belgium harvested as zero
+  // zones and turned out to have 158. This is the same hole on the other
+  // query: Ukraine harvested as zero cameras while another job was saturating
+  // Overpass, and had 839 the moment it was asked again.
+  //
+  // A country genuinely can have no mapped cameras, so this costs one extra
+  // query there and still reports zero. What it removes is the case where an
+  // empty 200 and an empty country are indistinguishable, which has now
+  // happened three times in a day.
+  if (cameraResponse.elements.length === 0) {
+    log(`[${countryCode}] no cameras came back; asking again before believing it`)
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    cameraResponse = await runOverpassQuery(pointCameraQuery(isoCode), options.overpass)
+
+    if (cameraResponse.elements.length > 0) {
+      warnings.push(
+        'the first camera query returned nothing and the second returned ' +
+          `${cameraResponse.elements.length} elements; Overpass was answering empty rather ` +
+          'than this country having no cameras'
+      )
+    }
+  }
 
   log(`[${countryCode}] querying Overpass for average-speed sections`)
   let zoneResponse = await runOverpassQuery(averageSpeedZoneQuery(isoCode), options.overpass)
