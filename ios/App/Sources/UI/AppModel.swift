@@ -32,6 +32,28 @@ final class AppModel {
 
     let driving = DrivingDetector()
 
+    /// Silence for this run of the app only.
+    ///
+    /// Deliberately not in AppSettings and deliberately not persisted. The
+    /// Settings toggle is a decision about how the app behaves; this is a
+    /// decision about the next twenty minutes - a passenger asleep, a phone
+    /// call, a stretch of road you already know. Carrying it across a relaunch
+    /// would turn a temporary hush into a permanently silent safety app whose
+    /// owner has forgotten why, which is the one failure mode a mute button
+    /// must not have.
+    var isMutedForSession = false {
+        didSet {
+            guard isMutedForSession != oldValue else { return }
+            voice.settings = settings.voiceSettings(mutedForSession: isMutedForSession)
+            Diagnostics.shared.record(
+                .voice,
+                isMutedForSession
+                    ? "muted for this session - restored when the app is next opened"
+                    : "unmuted"
+            )
+        }
+    }
+
     /// A value type, so `didSet` fires when a view toggles any single setting.
     /// A reference type here would only notify on replacement, and every
     /// settings toggle would silently fail to reach the voice and the monitor.
@@ -164,7 +186,7 @@ final class AppModel {
     private func applySettings() {
         applyAnalyticsSetting()
         applyDrivingDetection()
-        voice.settings = settings.voiceSettings
+        voice.settings = settings.voiceSettings(mutedForSession: isMutedForSession)
         monitor?.settings = settings.driveSettings
     }
 }
@@ -275,9 +297,9 @@ struct AppSettings: Equatable {
         )
     }
 
-    var voiceSettings: VoiceCoach.Settings {
+    func voiceSettings(mutedForSession: Bool = false) -> VoiceCoach.Settings {
         var settings = VoiceCoach.Settings.default
-        settings.enabled = voiceEnabled
+        settings.enabled = voiceEnabled && !mutedForSession
         settings.respectSilentSwitch = respectSilentSwitch
         settings.voiceIdentifier = voiceIdentifier
         settings.rateScale = speechRate

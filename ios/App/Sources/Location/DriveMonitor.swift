@@ -48,6 +48,13 @@ final class DriveMonitor {
     /// glance, which is the only way it is ever read.
     private(set) var currentSpeedKph: Double?
 
+    /// The camera being approached, for the on-screen warning.
+    ///
+    /// Cleared once passed rather than left to fade: a banner still showing a
+    /// camera the driver went by two minutes ago is worse than no banner,
+    /// because it teaches them the screen is stale.
+    internal(set) var currentApproach: CameraApproach?
+
     /// True while precise tracking is on, which the UI surfaces so the battery
     /// cost is never a surprise.
     var isInZone: Bool { session != nil }
@@ -57,12 +64,12 @@ final class DriveMonitor {
     private let location: LocationService
     private let store: CameraDataStore
     private let voice: CoachVoice
-    private var phrasebook: Phrasebook
+    var phrasebook: Phrasebook
 
     private var geofences = GeofenceManager()
     private var session: ZoneSession?
     private var announcer = CoachingAnnouncer()
-    private var approachMonitor = CameraApproachMonitor()
+    var approachMonitor = CameraApproachMonitor()
     private var refreshTask: Task<Void, Never>?
 
     private var limitMatcher = RoadLimitMatcher()
@@ -350,26 +357,13 @@ final class DriveMonitor {
         beginSession(for: zone, firstFix: fix)
     }
 
-    private func announceApproachingCameras(fix: LocationFix) {
-        let approaches = approachMonitor.update(fix: fix, cameras: nearbyCameras)
-        for approach in approaches {
-            announce(approach)
-        }
-    }
-
-    private func announce(_ approach: CameraApproach) {
-        guard shouldAnnounce(approach.camera) else { return }
-        guard let line = phrasebook.cameraApproach(approach) else { return }
-        speak(line, urgent: approach.urgency == .imminent)
-    }
-
     /// Which of the four "what to announce" switches governs this camera.
     ///
     /// Every type maps to exactly one switch. The previous version gated the
     /// whole approach path on `announcePointCameras` before consulting this,
     /// which made the red light and mobile switches unreachable: turning speed
     /// cameras off turned everything off.
-    private func shouldAnnounce(_ camera: Camera) -> Bool {
+    func shouldAnnounce(_ camera: Camera) -> Bool {
         switch camera.type {
         case .mobileHotspot:
             return settings.announceMobileHotspots
@@ -489,7 +483,7 @@ final class DriveMonitor {
         }
     }
 
-    private func speak(_ line: String, urgent: Bool) {
+    func speak(_ line: String, urgent: Bool) {
         guard settings.voiceEnabled else { return }
         voice.speak(line, urgent: urgent)
     }

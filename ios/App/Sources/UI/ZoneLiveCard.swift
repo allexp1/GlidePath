@@ -38,6 +38,16 @@ struct ZoneLiveCard: View {
 
                 figures
 
+                ZoneProgressBar(
+
+                    advice: advice,
+
+                    zoneDistanceMeters: zone.distanceMeters,
+
+                    units: units
+
+                )
+
                 if case let .pause(seconds, stop, distance)? = advice.recovery {
                     recoveryNote(seconds: seconds, stop: stop, distance: distance)
                 } else if case .unrecoverable? = advice.recovery {

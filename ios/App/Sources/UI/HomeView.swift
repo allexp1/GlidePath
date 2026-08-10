@@ -40,7 +40,7 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 HStack {
                     if model.settings.showSpeedLimit, let match = monitor?.currentRoadLimit {
-                        SpeedLimitRoundel(
+                        SpeedSign(
                             limitKph: match.limitKph,
                             speedKph: monitor?.currentSpeedKph,
                             units: model.settings.units
@@ -58,6 +58,13 @@ struct HomeView: View {
             VStack(spacing: 14) {
                 Spacer()
 
+                // Above the card, because a camera warning is about the road
+                // ahead and the card is about the section you are inside.
+                if let approach = monitor?.currentApproach, monitor?.activeZone == nil {
+                    CameraApproachBanner(approach: approach, units: model.settings.units)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 if let zone = monitor?.activeZone, let advice = monitor?.currentAdvice {
                     ZoneLiveCard(zone: zone, advice: advice, units: model.settings.units)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -69,6 +76,7 @@ struct HomeView: View {
             .padding(.bottom, 16)
         }
         .animation(.smooth(duration: 0.4), value: monitor?.activeZone?.id)
+        .animation(.snappy(duration: 0.3), value: monitor?.currentApproach?.camera.id)
         .sheet(item: $selectedCamera) { tapped in
             CameraDetailSheet(
                 camera: tapped,
@@ -146,6 +154,15 @@ struct HomeView: View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 Spacer()
+
+                Button {
+                    withAnimation(.snappy) { model.isMutedForSession.toggle() }
+                } label: {
+                    controlIcon(model.isMutedForSession ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .foregroundStyle(model.isMutedForSession ? .orange : .primary)
+                }
+                .zonexploGlassCapsule()
+                .accessibilityLabel(model.isMutedForSession ? "Unmute Zonexplo" : "Mute until I reopen the app")
 
                 Button {
                     withAnimation(.smooth) {
@@ -289,62 +306,6 @@ struct HomeView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .zonexploGlass(cornerRadius: 18)
-    }
-}
-
-/// The posted limit for the road under the car, drawn as the sign it comes from.
-///
-/// A European limit sign is a red annulus around a black number on white, and
-/// copying it is not decoration: it is the one piece of iconography a driver can
-/// read without reading, which is the entire requirement for something glanced
-/// at from a moving car. A number in a rounded rectangle would have to be
-/// interpreted.
-///
-/// The current speed sits underneath rather than inside, and goes red when over.
-/// Colour alone never carries it - the number itself is the message - because a
-/// red-green deficiency is common and a driver squinting at a phone in low
-/// afternoon sun has effectively acquired one.
-struct SpeedLimitRoundel: View {
-    let limitKph: Double
-    let speedKph: Double?
-    let units: DistanceUnits
-
-    private var phrasebook: Phrasebook { Phrasebook(units: units) }
-
-    private var isOver: Bool {
-        guard let speedKph else { return false }
-        return speedKph - limitKph >= SpeedLimitMonitor.Thresholds.standard.allowance(for: limitKph)
-    }
-
-    var body: some View {
-        VStack(spacing: 5) {
-            Text(phrasebook.speedPhrase(limitKph))
-                .font(.system(size: 25, weight: .heavy, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.black)
-                .frame(width: 62, height: 62)
-                .background(.white, in: Circle())
-                .overlay(Circle().strokeBorder(.red, lineWidth: 7))
-                .shadow(radius: 3, y: 1)
-
-            if let speedKph {
-                Text(phrasebook.speedPhrase(speedKph))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isOver ? .red : .primary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 3)
-                    .zonexploGlass(cornerRadius: 11)
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        let limit = "Speed limit \(phrasebook.speedPhrase(limitKph))"
-        guard let speedKph else { return limit }
-        return "\(limit). You are doing \(phrasebook.speedPhrase(speedKph))"
     }
 }
 
