@@ -28,6 +28,37 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(path.cumulativeDistances.count, path.coordinates.count)
     }
 
+    /// The two halves must cover the road exactly once and meet at the cut.
+    /// A gap here draws as a break in the section on the map, which reads as
+    /// "the zone ends and starts again" rather than "you are here".
+    func testSplitHalvesMeetAtTheCut() {
+        let path = TestFixtures.straightPath(lengthMeters: 5_000)
+        let (covered, remaining) = path.split(atDistance: 1_750)
+
+        XCTAssertGreaterThanOrEqual(covered.count, 2)
+        XCTAssertGreaterThanOrEqual(remaining.count, 2)
+        XCTAssertEqual(covered.last?.distance(to: remaining[0]) ?? .infinity, 0, accuracy: 0.001)
+        XCTAssertEqual(covered[0].distance(to: path.start), 0, accuracy: 0.001)
+        XCTAssertEqual(remaining[remaining.count - 1].distance(to: path.end), 0, accuracy: 0.001)
+
+        let cut = covered[covered.count - 1]
+        XCTAssertEqual(path.project(cut).distanceAlong, 1_750, accuracy: 2)
+    }
+
+    /// At the ends one half is empty rather than a stub, so nothing is drawn
+    /// for a section not yet entered or already finished.
+    func testSplitAtTheEndsGivesOneEmptyHalf() {
+        let path = TestFixtures.straightPath(lengthMeters: 5_000)
+
+        let atStart = path.split(atDistance: 0)
+        XCTAssertTrue(atStart.covered.isEmpty)
+        XCTAssertEqual(atStart.remaining.count, path.coordinates.count)
+
+        let past = path.split(atDistance: 9_000)
+        XCTAssertEqual(past.covered.count, path.coordinates.count)
+        XCTAssertTrue(past.remaining.isEmpty)
+    }
+
     func testProjectionRecoversDistanceAlong() {
         let path = TestFixtures.straightPath(lengthMeters: 5_000)
         let point = path.coordinate(atDistance: 1_750)

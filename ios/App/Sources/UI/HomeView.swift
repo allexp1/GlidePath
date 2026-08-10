@@ -1,4 +1,5 @@
 import ZonexploCore
+import CoreLocation
 import MapKit
 import SwiftUI
 import UIKit
@@ -66,8 +67,13 @@ struct HomeView: View {
                 }
 
                 if let zone = monitor?.activeZone, let advice = monitor?.currentAdvice {
-                    ZoneLiveCard(zone: zone, advice: advice, units: model.settings.units)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    ZoneLiveCard(
+                        zone: zone,
+                        advice: advice,
+                        units: model.settings.units,
+                        isMuted: model.isMutedForSession
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
                     standbyCard
                 }
@@ -200,6 +206,8 @@ struct HomeView: View {
         Map(position: $camera) {
             UserAnnotation()
 
+            zoneOverlays
+
             ForEach(monitor?.nearbyCameras.prefix(120) ?? [], id: \.id) { pin in
                 Annotation(
                     "",
@@ -229,6 +237,88 @@ struct HomeView: View {
         .mapControlVisibility(.hidden)
     }
 
+    // MARK: - Zones on the map
+
+    /// The sections themselves, which are the only thing on this map that a
+    /// camera-alert app does not already show.
+    ///
+    /// A pin says "there is a camera here". A section is a stretch of road with
+    /// a start and an end, and the question a driver in one actually asks is
+    /// "how much more of this is there" - which is spatial, and which the
+    /// numbers on the card can only answer in the abstract. Drawing the road
+    /// answers it in the shape the question was asked in.
+    ///
+    /// The active section is split at the driver: what is behind them is faded
+    /// to the point of being scenery, what is ahead is the thing being driven.
+    /// Its colour is the tier the engine decided, not a second opinion computed
+    /// here, for the same reason the progress bar takes it rather than
+    /// recomputing - a road that disagreed with the voice would be worse than
+    /// no road at all.
+    @MapContentBuilder
+    private var zoneOverlays: some MapContent {
+        ForEach(upcomingZones, id: \.id) { zone in
+            if let path = zone.path {
+                MapPolyline(coordinates: path.coordinates.map(\.clCoordinate))
+                    .stroke(
+                        .purple.opacity(0.45),
+                        style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                    )
+            }
+        }
+
+        if let zone = monitor?.activeZone, let path = zone.path {
+            let split = path.split(atDistance: activeZoneProgressMeters(zone: zone, path: path))
+            let tint = monitor?.currentAdvice.map { TierPalette.tint(for: $0.tier) } ?? .green
+
+            // A casing under the whole section, because a coloured line on a
+            // pale map is exactly as legible as the map happens to be that day.
+            MapPolyline(coordinates: path.coordinates.map(\.clCoordinate))
+                .stroke(
+                    .black.opacity(0.28),
+                    style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round)
+                )
+
+            if split.covered.count >= 2 {
+                MapPolyline(coordinates: split.covered.map(\.clCoordinate))
+                    .stroke(
+                        tint.opacity(0.3),
+                        style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                    )
+            }
+
+            if split.remaining.count >= 2 {
+                MapPolyline(coordinates: split.remaining.map(\.clCoordinate))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+            }
+        }
+    }
+
+    /// How far along its own polyline the driver is.
+    ///
+    /// Scaled, because `distanceMeters` is the authoritative road distance and
+    /// the stored polyline is a simplification that rarely adds up to exactly
+    /// the same number. Using the polyline's own length would drift the drawn
+    /// position away from the distance the card is quoting.
+    private func activeZoneProgressMeters(zone: Zone, path: RoadPath) -> Double {
+        guard zone.distanceMeters > 0, let advice = monitor?.currentAdvice else { return 0 }
+        let covered = zone.distanceMeters - advice.distanceRemainingMeters
+        return path.totalDistance * min(1, max(0, covered / zone.distanceMeters))
+    }
+
+    /// Sections nearby but not yet entered, nearest first.
+    ///
+    /// Capped at a dozen: the monitor holds zones out to sixty kilometres so
+    /// that geofences can be placed ahead of time, and drawing all of them
+    /// would put roads on the map the driver will not reach for half an hour.
+    /// This is a drawing limit, not a coverage limit - every one of them is
+    /// still armed and will still be announced.
+    private var upcomingZones: [Zone] {
+        let zones = (monitor?.nearbyZones ?? []).filter { $0.id != monitor?.activeZone?.id }
+        guard let here = model.location.latestFix?.coordinate else { return Array(zones.prefix(12)) }
+        let byDistance = zones.sorted { here.distance(to: $0.entry) < here.distance(to: $1.entry) }
+        return Array(byDistance.prefix(12))
+    }
+
     // MARK: - Standby
 
     private var standbyCard: some View {
@@ -251,6 +341,28 @@ struct HomeView: View {
                     Spacer()
                 }
 
+                // A mute the driver set twenty minutes ago and a broken app are
+                // the same experience. The speaker icon turns orange, but a
+                // 44pt glyph is not what anyone reads at speed - the card is.
+                if model.isMutedForSession {
+                    DriveNotice(
+                        symbol: "speaker.slash.fill",
+                        tint: .orange,
+                        title: "Muted for this drive",
+                        detail: "Tap the speaker to bring the voice back. It returns by itself "
+                            + "next time you open Zonexplo."
+                    )
+                }
+
+                if let (title, detail) = limitNotice {
+                    DriveNotice(
+                        symbol: "signpost.right.and.left",
+                        tint: .gray,
+                        title: title,
+                        detail: detail
+                    )
+                }
+
                 if let outcome = monitor?.lastOutcome {
                     lastRunSummary(outcome)
                 }
@@ -271,6 +383,30 @@ struct HomeView: View {
         }
     }
 
+    /// Why the roundel is not on screen.
+    ///
+    /// The sign simply vanishing is the trap: it looks the same whether the
+    /// road is untagged, the download is partial, or the matcher is broken. The
+    /// first needs nothing, the second needs a tap in Settings, and the third
+    /// needs a bug report - so the screen has to separate them.
+    private var limitNotice: (title: String, detail: String)? {
+        switch monitor?.limitStatus {
+        case .notPosted:
+            return (
+                "No limit posted on this road",
+                "Nobody has recorded one in OpenStreetMap. Zonexplo will not guess at a limit."
+            )
+        case .noneNearby:
+            return (
+                "No speed limits for this area",
+                "Camera warnings still work. Settings > Road speed limit to download limits "
+                    + "for the country you are in."
+            )
+        case .waiting, .notApplicable, .none:
+            return nil
+        }
+    }
+
     private var subtitle: String {
         guard monitor?.isMonitoring == true else {
             return "Tap start before you set off"
@@ -287,25 +423,19 @@ struct HomeView: View {
     private func lastRunSummary(_ outcome: ZoneOutcome) -> some View {
         let phrasebook = Phrasebook(units: model.settings.units)
 
-        return HStack(spacing: 10) {
-            Image(systemName: outcome.passed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(outcome.passed ? .green : .red)
+        return DriveNotice(
+            symbol: outcome.passed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+            tint: outcome.passed ? .green : .red,
+            title: outcome.passed ? "Last zone: clear" : "Last zone: over the limit",
+            detail: "Averaged \(phrasebook.speedPhrase(outcome.averageKph)) "
+                + "against \(phrasebook.speedPhrase(outcome.limitKph))"
+        )
+    }
+}
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(outcome.passed ? "Last zone: clear" : "Last zone: over the limit")
-                    .font(.subheadline.weight(.medium))
-                Text(
-                    "Averaged \(phrasebook.speedPhrase(outcome.averageKph)) "
-                        + "against \(phrasebook.speedPhrase(outcome.limitKph))"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .zonexploGlass(cornerRadius: 18)
+private extension ZonexploCore.Coordinate {
+    var clCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }
 

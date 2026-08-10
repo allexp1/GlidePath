@@ -34,13 +34,7 @@ struct ZoneProgressBar: View {
         return min(1, max(0, covered / zoneDistanceMeters))
     }
 
-    private var tint: Color {
-        switch advice.tier {
-        case .normal: return .green
-        case .tight: return .orange
-        case .impossible: return .red
-        }
-    }
+    private var tint: Color { TierPalette.tint(for: advice.tier) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

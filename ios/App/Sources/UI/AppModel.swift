@@ -2,6 +2,7 @@ import Foundation
 import ZonexploCore
 import Observation
 import SwiftUI
+import UIKit
 
 /// The composition root.
 ///
@@ -183,9 +184,17 @@ final class AppModel {
         driving.start()
     }
 
+    /// The screen sleeps after thirty seconds, and every visual warning this
+    /// app draws is worthless once it does. Cleared the moment watching stops,
+    /// so a phone left on a desk is not held awake by an app nobody is using.
+    private func applyIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = settings.keepScreenAwake && settings.isWatching
+    }
+
     private func applySettings() {
         applyAnalyticsSetting()
         applyDrivingDetection()
+        applyIdleTimer()
         voice.settings = settings.voiceSettings(mutedForSession: isMutedForSession)
         monitor?.settings = settings.driveSettings
     }
@@ -227,6 +236,16 @@ struct AppSettings: Equatable {
     /// forgotten on the drive it was needed.
     var autoStartWhenDriving: Bool
 
+    /// Hold the screen on while watching the road.
+    ///
+    /// iOS locks the phone after about thirty seconds, which is shorter than
+    /// any drive, so without this the sign, the camera banner and the zone bar
+    /// are visible for the first half-minute and then never again. On by
+    /// default because it costs nothing when it is not needed: iOS ignores the
+    /// flag entirely unless Zonexplo is the app on screen, and most of the time
+    /// it is not - the whole design is for it to sit behind a navigator.
+    var keepScreenAwake: Bool
+
     /// Countries whose legal notice the driver has read and accepted. Stored so
     /// the warning appears once rather than nagging.
     var acceptedLegalCodes: [String]
@@ -252,6 +271,7 @@ struct AppSettings: Equatable {
         speechRate = defaults.object(forKey: Keys.speechRate) as? Double ?? 1.05
         analyticsEnabled = defaults.object(forKey: Keys.analyticsEnabled) as? Bool ?? true
         autoStartWhenDriving = defaults.object(forKey: Keys.autoStartWhenDriving) as? Bool ?? true
+        keepScreenAwake = defaults.object(forKey: Keys.keepScreenAwake) as? Bool ?? true
         acceptedLegalCodes = defaults.stringArray(forKey: Keys.acceptedLegalCodes) ?? []
         hasSeenOnboarding = defaults.bool(forKey: Keys.hasSeenOnboarding)
         isWatching = defaults.bool(forKey: Keys.isWatching)
@@ -272,6 +292,7 @@ struct AppSettings: Equatable {
         defaults.set(speechRate, forKey: Keys.speechRate)
         defaults.set(analyticsEnabled, forKey: Keys.analyticsEnabled)
         defaults.set(autoStartWhenDriving, forKey: Keys.autoStartWhenDriving)
+        defaults.set(keepScreenAwake, forKey: Keys.keepScreenAwake)
         defaults.set(acceptedLegalCodes, forKey: Keys.acceptedLegalCodes)
         defaults.set(hasSeenOnboarding, forKey: Keys.hasSeenOnboarding)
         defaults.set(isWatching, forKey: Keys.isWatching)
@@ -320,6 +341,7 @@ struct AppSettings: Equatable {
         static let speechRate = "settings.speechRate"
         static let analyticsEnabled = "settings.analyticsEnabled"
         static let autoStartWhenDriving = "settings.autoStartWhenDriving"
+        static let keepScreenAwake = "settings.keepScreenAwake"
         static let acceptedLegalCodes = "settings.acceptedLegalCodes"
         static let hasSeenOnboarding = "settings.hasSeenOnboarding"
         static let isWatching = "settings.isWatching"

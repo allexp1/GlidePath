@@ -117,6 +117,34 @@ public struct RoadPath: Sendable, Equatable, Codable {
         )
     }
 
+    /// The path cut in two at `distance` along it.
+    ///
+    /// For drawing the section on a map as two strokes - what is behind the
+    /// driver and what is still ahead. The cut point appears in both halves, so
+    /// the strokes meet exactly rather than leaving a gap at the join that
+    /// would read as a break in the road.
+    ///
+    /// Either half can be empty (at the very start or the very end), and a half
+    /// of fewer than two points draws nothing, which is correct.
+    public func split(atDistance distance: Double) -> (covered: [Coordinate], remaining: [Coordinate]) {
+        guard distance > 0 else { return ([], coordinates) }
+        guard distance < totalDistance else { return (coordinates, []) }
+
+        let cut = coordinate(atDistance: distance)
+
+        // The segment `distance` falls inside. Same walk as
+        // `coordinate(atDistance:)`, so the two agree by construction.
+        var index = 0
+        while index < cumulativeDistances.count - 1, cumulativeDistances[index + 1] < distance {
+            index += 1
+        }
+
+        return (
+            Array(coordinates[0...index]) + [cut],
+            [cut] + Array(coordinates[(index + 1)...])
+        )
+    }
+
     /// The compass bearing of one segment, in degrees clockwise from true north.
     ///
     /// This is the direction the road runs at that point, which is what tells a

@@ -13,6 +13,10 @@ struct ZoneLiveCard: View {
     let advice: CoachingAdvice
     let units: DistanceUnits
 
+    /// Passed in rather than read from the environment, so this card stays a
+    /// pure function of its inputs and can be previewed in any state.
+    var isMuted = false
+
     @Namespace private var glassNamespace
 
     private var phrasebook: Phrasebook { Phrasebook(units: units) }
@@ -47,6 +51,20 @@ struct ZoneLiveCard: View {
                     units: units
 
                 )
+
+                // Worth more room here than on the standby card. Inside a
+                // zone the voice is the product: it is the only thing that
+                // knows the target speed changed, and a driver watching a
+                // number that no longer updates aloud will assume the coaching
+                // is still on and only find out at the exit camera.
+                if isMuted {
+                    DriveNotice(
+                        symbol: "speaker.slash.fill",
+                        tint: .orange,
+                        title: "Muted for this drive",
+                        detail: "The target above is still live. Nothing will be spoken."
+                    )
+                }
 
                 if case let .pause(seconds, stop, distance)? = advice.recovery {
                     recoveryNote(seconds: seconds, stop: stop, distance: distance)
@@ -198,12 +216,15 @@ struct ZoneLiveCard: View {
     }
 
     private var accessibilitySummary: String {
+        let muted = isMuted ? " Muted for this drive." : ""
         guard !advice.isSuppressed else {
-            return "In traffic. Coaching paused."
+            return "In traffic. Coaching paused." + muted
         }
-        guard let target = advice.targetSpeedKph else { return "In an average speed zone." }
+        guard let target = advice.targetSpeedKph else {
+            return "In an average speed zone." + muted
+        }
         return "Hold \(phrasebook.speedPhrase(target)). "
             + "\(phrasebook.distancePhrase(advice.distanceRemainingMeters)) remaining. "
-            + "Average so far \(phrasebook.speedPhrase(advice.currentAverageKph))."
+            + "Average so far \(phrasebook.speedPhrase(advice.currentAverageKph))." + muted
     }
 }

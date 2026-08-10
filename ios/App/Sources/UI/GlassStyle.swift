@@ -1,4 +1,5 @@
 import SwiftUI
+import ZonexploCore
 
 /// The app's use of Liquid Glass, in one place.
 ///
@@ -68,6 +69,10 @@ private struct ZonexploGlassModifier<S: InsettableShape>: ViewModifier {
 }
 
 /// Colour per coaching tier. Reinforcement only, never the sole signal.
+///
+/// One mapping, used by the card, the progress bar and the line drawn on the
+/// map. Three copies of this switch is how a bar goes amber while the road
+/// under it stays green.
 enum TierPalette {
     static func tint(for tier: CoachingTierAppearance) -> Color {
         switch tier {
@@ -75,6 +80,14 @@ enum TierPalette {
         case .tight: return .orange
         case .impossible: return .red
         case .idle: return .accentColor
+        }
+    }
+
+    static func tint(for tier: CoachingTier) -> Color {
+        switch tier {
+        case .normal: return .green
+        case .tight: return .orange
+        case .impossible: return .red
         }
     }
 }

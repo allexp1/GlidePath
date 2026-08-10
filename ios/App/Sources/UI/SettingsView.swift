@@ -131,15 +131,11 @@ struct SettingsView: View {
             Section {
                 Toggle("Start when I start driving", isOn: $model.settings.autoStartWhenDriving)
                     .disabled(!DrivingDetector.isSupported)
+                Toggle("Keep the screen on", isOn: $model.settings.keepScreenAwake)
+            } header: {
+                Text("While driving")
             } footer: {
-                Text(
-                    DrivingDetector.isSupported
-                        ? "Zonexplo begins watching by itself once your phone is confident it is "
-                            + "in a moving car, so a drive is never missed because nobody pressed "
-                            + "start. It never stops by itself: at a red light you are still driving."
-                        : "This iPhone does not report motion activity, so watching has to be "
-                            + "started by hand."
-                )
+                Text(drivingFooter)
             }
 
             Section {
@@ -221,6 +217,25 @@ struct SettingsView: View {
                 + "will use the best it finds."
         }
         return ducking
+    }
+
+    private var drivingFooter: String {
+        let autoStart: String
+        if DrivingDetector.isSupported {
+            autoStart = "Zonexplo begins watching by itself once your phone is confident it is "
+                + "in a moving car, so a drive is never missed because nobody pressed start. "
+                + "It never stops by itself: at a red light you are still driving."
+        } else {
+            autoStart = "This iPhone does not report motion activity, so watching has to be "
+                + "started by hand."
+        }
+
+        let awake = "The screen normally locks after about half a minute, which would hide the "
+            + "limit sign and the camera warnings for the rest of the drive. This only applies "
+            + "while Zonexplo itself is the app on screen; behind a navigator it changes nothing "
+            + "and costs nothing."
+
+        return autoStart + "\n\n" + awake
     }
 
     private func openSystemSettings() {

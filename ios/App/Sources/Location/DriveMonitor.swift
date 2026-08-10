@@ -41,7 +41,11 @@ final class DriveMonitor {
     /// The road the driver is currently held to be on, and its posted limit.
     /// Nil is normal and common: no limit data downloaded, or a road nobody has
     /// tagged.
-    private(set) var currentRoadLimit: RoadLimitMatcher.Match?
+    ///
+    /// `internal(set)` rather than `private(set)` only because the code that
+    /// writes it lives in `DriveMonitor+Limits`. Nothing outside this type
+    /// should be assigning it.
+    internal(set) var currentRoadLimit: RoadLimitMatcher.Match?
 
     /// The smoothed speed the limit roundel shows. Smoothed rather than raw
     /// because a number flickering by three every second is unreadable at a
@@ -59,10 +63,39 @@ final class DriveMonitor {
     /// cost is never a surprise.
     var isInZone: Bool { session != nil }
 
+    /// Why there is no speed limit roundel on screen.
+    ///
+    /// An absent sign is indistinguishable from a broken app, and the two
+    /// reasons it can be absent need opposite responses: a road nobody tagged
+    /// is nothing to act on, whereas an area with no limits downloaded is a
+    /// thirty-second fix in Settings that nobody will ever guess at. Both look
+    /// identical from the driver's seat, which is how a partial download stays
+    /// invisible for a whole trip.
+    enum LimitStatus: Equatable {
+        /// A limit is on screen, or the driver turned the feature off, or the
+        /// app is not watching. Nothing to explain either way.
+        case notApplicable
+        /// The window around the driver has not come back from the database yet.
+        case waiting
+        /// The window came back empty. Almost always a country, or part of one,
+        /// that was never downloaded.
+        case noneNearby
+        /// Limits are loaded here, but this particular road has none.
+        case notPosted
+    }
+
+    var limitStatus: LimitStatus {
+        guard isMonitoring, settings.showSpeedLimit, currentRoadLimit == nil else {
+            return .notApplicable
+        }
+        guard hasLoadedLimitWindow else { return .waiting }
+        return nearbyRoadLimits.isEmpty ? .noneNearby : .notPosted
+    }
+
     // MARK: - Collaborators
 
     private let location: LocationService
-    private let store: CameraDataStore
+    let store: CameraDataStore
     private let voice: CoachVoice
     var phrasebook: Phrasebook
 
@@ -72,14 +105,20 @@ final class DriveMonitor {
     var approachMonitor = CameraApproachMonitor()
     private var refreshTask: Task<Void, Never>?
 
-    private var limitMatcher = RoadLimitMatcher()
-    private var limitMonitor = SpeedLimitMonitor()
+    var limitMatcher = RoadLimitMatcher()
+    var limitMonitor = SpeedLimitMonitor()
     private var speedSmoother = SpeedSmoother()
 
     /// Speed limits for the roads around the driver, reloaded as they move.
-    private var nearbyRoadLimits: [RoadLimit] = []
-    private var limitRefreshTask: Task<Void, Never>?
-    private var lastLimitRefreshCentre: Coordinate?
+    var nearbyRoadLimits: [RoadLimit] = []
+    var limitRefreshTask: Task<Void, Never>?
+    var lastLimitRefreshCentre: Coordinate?
+
+    /// Whether a limit window has ever come back. Without it, "nothing loaded
+    /// yet" and "nothing here to load" are the same empty array, and the UI
+    /// would tell a driver to go and download something a hundred milliseconds
+    /// before the data arrived.
+    var hasLoadedLimitWindow = false
 
     /// Zones whose entry geofence has fired and which we are watching for a
     /// real crossing. Keyed by zone id.
@@ -171,6 +210,8 @@ final class DriveMonitor {
         currentRoadLimit = nil
         currentSpeedKph = nil
         lastLimitRefreshCentre = nil
+        nearbyRoadLimits = []
+        hasLoadedLimitWindow = false
     }
 
     // MARK: - Fixes
@@ -195,77 +236,6 @@ final class DriveMonitor {
 
         if geofences.needsRefresh(at: fix.coordinate) {
             refreshGeofences(around: fix.coordinate)
-        }
-    }
-
-    // MARK: - Posted speed limits
-
-    /// How far the driver must move before the limit window is rebuilt.
-    ///
-    /// Much tighter than the geofence window, and it has to be: the window is
-    /// only a few hundred metres wide because matching projects every candidate
-    /// on every fix, so it goes stale in seconds at motorway speed.
-    private static let limitRefreshThreshold: Double = 500
-
-    /// Radius of the limit window. Wide enough to survive until the next
-    /// refresh, narrow enough that a city centre does not load every side
-    /// street within a kilometre.
-    private static let limitWindowRadius: Double = 1_200
-
-    private func updateRoadLimit(fix: LocationFix) {
-        guard settings.showSpeedLimit else {
-            currentRoadLimit = nil
-            limitMatcher.reset()
-            limitMonitor.reset()
-            return
-        }
-
-        if needsLimitRefresh(at: fix.coordinate) {
-            refreshRoadLimits(around: fix.coordinate)
-        }
-
-        let match = limitMatcher.update(fix: fix, candidates: nearbyRoadLimits)
-        currentRoadLimit = match
-
-        // Inside a zone the coaching engine owns the voice. It is already
-        // telling the driver what speed to hold, worked out from the same road
-        // and aimed at a camera that is actually there; a second voice saying
-        // something adjacent about the same stretch of tarmac is noise at the
-        // one moment the driver most needs to hear one clear number.
-        guard session == nil else {
-            _ = limitMonitor.update(fix: fix, limitKph: nil)
-            return
-        }
-
-        guard let exceedance = limitMonitor.update(fix: fix, limitKph: match?.limitKph) else {
-            return
-        }
-        guard settings.announceSpeedLimit else { return }
-
-        speak(phrasebook.speedLimitExceeded(exceedance), urgent: false)
-    }
-
-    private func needsLimitRefresh(at coordinate: Coordinate) -> Bool {
-        guard let centre = lastLimitRefreshCentre else { return true }
-        return centre.distance(to: coordinate) > Self.limitRefreshThreshold
-    }
-
-    private func refreshRoadLimits(around coordinate: Coordinate) {
-        // Claimed before the query starts, for the same reason the geofence
-        // refresh does it: at 1 Hz, every fix arriving while a read is in
-        // flight would launch another one.
-        lastLimitRefreshCentre = coordinate
-
-        limitRefreshTask?.cancel()
-        limitRefreshTask = Task { [weak self] in
-            guard let self else { return }
-            let limits = (try? await store.roadLimits(
-                near: coordinate,
-                radiusMeters: Self.limitWindowRadius
-            )) ?? []
-
-            guard !Task.isCancelled else { return }
-            self.nearbyRoadLimits = limits
         }
     }
 
