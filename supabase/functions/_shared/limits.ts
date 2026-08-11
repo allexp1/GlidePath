@@ -79,6 +79,25 @@ export interface RoadLimitSyncOptions {
   bounds?: BoundingBox
 
   /**
+   * The bounds deliberately cover less than the country.
+   *
+   * A run over a partial box can finish every tile it was given, so by every
+   * measure this code has it looks exactly like a completed country - and that
+   * conclusion is wrong twice over. It reports "covered the country: yes",
+   * which hides that most of the region has no limits at all. Worse, it lets
+   * `finish_road_limit_sync` retire every way outside the box, because
+   * retirement means "not seen during a run that covered the country" and this
+   * run claims to be one. The 50% ceiling in that function catches the extreme
+   * case; a box holding 60% of a country's roads sails straight through it and
+   * silently unverifies the other 40%.
+   *
+   * So a partial box is never complete, whatever the tiles did. Nothing is
+   * retired, and the region keeps saying it is unfinished until somebody
+   * harvests the whole of it.
+   */
+  partialArea?: boolean
+
+  /**
    * Checked before each tile; stop cleanly when it returns true.
    *
    * A tile count is a poor proxy for time when tiles vary from an empty desert
@@ -274,7 +293,16 @@ export async function syncRoadLimits(
     await options.onTileComplete?.(key, fetched + skipped, tiles.length)
   }
 
-  const complete = !stoppedEarly && failed === 0 && fetched + skipped === tiles.length
+  const tilesAllDone = !stoppedEarly && failed === 0 && fetched + skipped === tiles.length
+  const complete = tilesAllDone && !options.partialArea
+
+  if (options.partialArea && tilesAllDone) {
+    warnings.push(
+      'every tile in the requested box was harvested, but the box is smaller than ' +
+        'the country: nothing outside it has limits, nothing has been retired, and ' +
+        'the region stays marked unfinished until the whole of it is covered'
+    )
+  }
 
   // A chunked caller finalises for itself, so there is nothing left to do here
   // and no version to report - the run is still open.

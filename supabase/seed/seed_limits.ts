@@ -68,9 +68,10 @@ async function main(): Promise<number> {
   // re-resolves the country from Overpass, and one throttled response there
   // ends a run that had hundreds of tiles banked.
   //
-  // What it costs: anything outside the box is silently not harvested, and the
-  // run still reports "covered the country". Use it where the omission is
-  // deliberate and known.
+  // What it costs: anything outside the box is simply not harvested. The run is
+  // therefore reported as partial however cleanly its tiles finish, so nothing
+  // is retired on the strength of it and the region keeps saying it is
+  // unfinished. Covering the rest is a matter of re-running without --bbox.
   const bboxArg = args.find((arg) => arg.startsWith('--bbox='))
   let bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number } | undefined
   if (bboxArg) {
@@ -154,6 +155,8 @@ async function main(): Promise<number> {
     dryRun,
     tileDegrees,
     bounds,
+    // A box narrower than the country can never be a complete harvest of it.
+    partialArea: bounds !== undefined,
     completedTiles,
     log: (message) => console.log(`  ${message}`),
     onTileComplete: async (tile) => {
@@ -170,7 +173,8 @@ async function main(): Promise<number> {
   console.log(`  geometry points      ${report.points}`)
   console.log(`  approx download      ${estimateSize(report.points, report.ways)}`)
   console.log(`  limit version        ${report.version ?? '(unchanged, dry run)'}`)
-  console.log(`  covered the country  ${report.complete ? 'yes' : 'no'}`)
+  console.log(`  covered the country  ${report.complete ? 'yes' : 'no'}` +
+    (bounds ? ' (--bbox: only the box was harvested)' : ''))
 
   if (report.warnings.length > 0) {
     console.log('')
@@ -188,6 +192,11 @@ async function main(): Promise<number> {
     console.log('')
     console.log(`  Speed limits for ${country.name} are now downloadable in the app,`)
     console.log('  as a separate opt-in from the camera data.')
+  } else if (!dryRun && bounds) {
+    console.log('')
+    console.log(`  ${country.name} holds limits for the box that was asked for, and they`)
+    console.log('  are downloadable now. It is not marked complete, because the rest of')
+    console.log('  the region has none - re-run without --bbox to cover all of it.')
   } else if (!dryRun) {
     console.log('')
     console.log('  Run the same command again to carry on from where this stopped.')

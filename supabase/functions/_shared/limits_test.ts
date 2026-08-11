@@ -390,6 +390,47 @@ Deno.test('resuming skips finished tiles and completes the country', async () =>
   assertEquals(rpcCalls.length, 0)
 })
 
+// A --bbox harvest finishes every tile it was given, so nothing in the tile
+// bookkeeping can tell it apart from a country that was covered whole. Left
+// alone it claims completeness, and completeness is the permission slip
+// finish_road_limit_sync needs to retire every way outside the box.
+Deno.test('a partial box is never a complete harvest, however cleanly it finishes', async () => {
+  const { client, rpcCalls } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  const report = await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl },
+    bounds: fourTiles,
+    partialArea: true
+  })
+
+  // Every tile succeeded ...
+  assertEquals(report.tilesTotal, 4)
+  assertEquals(report.tilesFetched, 4)
+  assertEquals(report.tilesFailed, 0)
+
+  // ... and it is still not a complete harvest of the country.
+  assertEquals(report.complete, false)
+  assertEquals(rpcCalls.length, 1)
+  assertEquals(rpcCalls[0].args.p_complete, false)
+  assert(report.warnings.some((w) => w.includes('smaller than')))
+})
+
+// The same run without the flag is the thing being guarded against: identical
+// tiles, identical outcome, and it does claim the country.
+Deno.test('the same tiles without the flag do claim the country', async () => {
+  const { client, rpcCalls } = fakeClient()
+  const overpass = fakeOverpass(fourTiles)
+
+  const report = await syncRoadLimits(client as unknown as DatabaseClient, 'LT', 'LT', {
+    overpass: { fetchImpl: overpass.fetchImpl },
+    bounds: fourTiles
+  })
+
+  assertEquals(report.complete, true)
+  assertEquals(rpcCalls[0].args.p_complete, true)
+})
+
 // The bug this exists to prevent is the nastiest one in the chunked design.
 // finish_road_limit_sync retires ways last seen before the run started, so if
 // each chunk stamped its own start time, chunk two would retire everything
