@@ -62,31 +62,36 @@ None of those name their cause in the error text, which is why `doctor` exists.
 
 Supabase project **Zonexplo**, ref `mesvkrfvbqrboouwwzlt`, eu-central-1.
 
-Data as of the last session:
+Roughly 246 enabled regions, 56,800 cameras and 1,064 average-speed zones, of
+which about 1,600,000 road limits cover nine regions. `make status` is not a
+thing; the numbers move, so query rather than trusting a table written here.
 
-| Country | Cameras | Zones | Road limits |
-| --- | --- | --- | --- |
-| Lithuania | 768 | 95 | 0 |
-| Israel | 185 | 0 | 0 |
-| Moldova | 108 | 0 | **6883** (version 1) |
+Road limits, which are the expensive half, exist for **NL, PL, ES, BE, CZ,
+US-CA, IL, MD** and **FI** (in progress). Everything else has cameras only.
 
-### Open problem: the Vault is empty, so the nightly sync cannot run
+Two of those carry a caveat, and both caveats live in
+`countries.road_limits_sync_error` rather than in anyone's memory:
 
-`sync-cameras` fires nightly via pg_cron and pg_net, and reads its credentials
-from Supabase Vault. **Those secrets were never created**, so it has been
-failing silently since the project was set up. Camera data for all three
-countries is going stale. Fix, once, in the SQL editor:
+- **US-CA is a bounding box, not a state.** Only the Bay Area was harvested,
+  because the point was to give the iOS Simulator somewhere to drive. Outside
+  it the roundel is simply absent.
+- **FI was interrupted before it finalised.** Its rows were in the table for a
+  day while `road_limit_count` read zero, which meant the app would not offer
+  the country at all. Rows existing is not the same as a country being
+  downloadable; the counter is only written by `finish_road_limit_sync`.
 
-```sql
-select vault.create_secret('<project url>', 'project_url');
-select vault.create_secret('<service role key>', 'service_role_key');
-```
+### The nightly sync works. It did not always.
 
-Related, and already fixed but worth knowing: the **pg_net background worker was
-dead** — requests queued forever and no response ever arrived. `select
-net.worker_restart();` revives it. If anything scheduled appears to do nothing,
-check `net.http_request_queue` against `net._http_response` before suspecting
-your own code.
+`sync-cameras` fires at 03:17 UTC via pg_cron and pg_net, reading its
+credentials from Supabase Vault. Both of the things that used to stop it are
+fixed, and both were silent:
+
+- **The Vault secrets were never created**, so every firing failed with nothing
+  in any log anyone was reading. Created now.
+- **The pg_net background worker was dead** — requests queued forever and no
+  response ever arrived. `select net.worker_restart();` revives it. If anything
+  scheduled appears to do nothing, check `net.http_request_queue` against
+  `net._http_response` before suspecting your own code.
 
 ### After adding a column, reload PostgREST
 
@@ -126,8 +131,21 @@ Facts that are not obvious and cost a day to learn:
 - Driving it from pg_cron works, but **unschedule the job when it finishes** —
   completion clears the checkpoint, so the next firing starts a whole new
   harvest.
+- **`--bbox` marks the run partial, and has to.** A box finishes every tile it
+  was given, so nothing in the tile bookkeeping distinguishes it from a country
+  covered whole — and completeness is the permission `finish_road_limit_sync`
+  needs to retire every way it did not see. A box holding 60% of a region
+  passes the 50% ceiling in that function and silently unverifies the rest.
+  `partialArea` now forces the run partial; the limits are still written and
+  still downloadable, only the claim changes.
+- **The tile key is derived from the tile size.** Resuming a checkpoint at a
+  different `--tile` skips every banked tile and then reports a country nobody
+  covered. `scripts/harvest-queue.sh` records the size each country was started
+  at for this reason.
 
-Israel and Lithuania have not been harvested. Roughly four hours each.
+`scripts/harvest-queue.sh` runs what is outstanding, sequentially — Overpass
+answers one query at a time per client, and throttling arrives looking like
+empty tiles rather than like an error.
 
 ### The deployed `sync-limits` differs from the repo
 
@@ -152,9 +170,26 @@ that catches upload blockers, and it has earned its keep:
   compiles, renders, and shows on the home screen; only the upload notices. It
   is declared by hand in `project.yml` and must stay there.
 
-TestFlight needs nine repository secrets and the one-time Apple setup in
-`docs/TESTFLIGHT.md`. `make archive` / `make testflight` do the same thing
-locally.
+### Two upload paths, and only one of them works today
+
+The app exists in App Store Connect (`Zonexplo`, id 6799726498) with builds on
+TestFlight and both tester groups configured. How they got there matters,
+because the two routes disagree about where the build number comes from:
+
+- **CI** (`.github/workflows/testflight.yml`) takes the build number from the
+  GitHub run number and never reads `project.yml`, so it cannot collide. It
+  needs **nine repository secrets that are not set** — a dispatch fails in
+  thirteen seconds on the pre-flight check, which is at least honest about it.
+  `docs/TESTFLIGHT.md` says where each one comes from.
+- **Locally**, `make archive` / `make testflight` export with
+  `manageAppVersionAndBuildNumber` false, so `CURRENT_PROJECT_VERSION` in
+  `ios/project.yml` is the only thing deciding the number. Every build up there
+  so far came this way. It also needs `ASC_KEY_ID`, `ASC_ISSUER_ID` and
+  `ASC_KEY_PATH` in the environment.
+
+So until the secrets exist, **bump `CURRENT_PROJECT_VERSION` before every
+upload** and re-run `make project`. A repeat is rejected at the end of the
+upload, after the archive has been built and sent.
 
 **The app icon is real artwork** — the Gateway Arc mark, a 1024×1024 opaque
 sRGB PNG in the asset catalogue. `scripts/generate-app-icon.py` still draws the
@@ -162,9 +197,6 @@ old placeholder, so `make icon` now refuses without `FORCE=1`; running it by
 reflex would replace the artwork with a coloured square and nothing would
 complain until the upload.
 
-Bumping the build number means editing `CURRENT_PROJECT_VERSION` in
-`ios/project.yml` and re-running `make project`. App Store Connect rejects a
-repeated build number.
 
 ---
 
