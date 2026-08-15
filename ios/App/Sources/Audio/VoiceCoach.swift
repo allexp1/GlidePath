@@ -193,9 +193,7 @@ final class VoiceCoach: NSObject, CoachVoice {
             try session.setActive(true)
             isSessionActive = true
 
-            if settings.forceBuiltInSpeaker {
-                routeToBuiltInSpeaker(session)
-            }
+            applyOutputRoute(session)
         } catch {
             // Losing the session means losing the voice, not the app. The UI
             // still shows live numbers, so failing quietly is right here.
@@ -209,11 +207,18 @@ final class VoiceCoach: NSObject, CoachVoice {
         }
     }
 
-    /// Push this utterance out of the phone's own speaker.
+    /// Send this utterance where the setting says, and nowhere else.
     ///
-    /// Applied per activation rather than once at launch, because the override
-    /// is a property of the active session: it is dropped every time the
-    /// session is deactivated, which happens after every line spoken.
+    /// Stated both ways round on every activation, rather than only applied
+    /// when the switch is on. An override is a property of the session and
+    /// outlives the decision that set it, so a version of this that merely
+    /// stopped re-applying would leave the phone talking to itself until
+    /// something else happened to clear the route - which is a setting that
+    /// cannot be turned off, whatever the switch says. Turning it off has to be
+    /// an instruction, not the absence of one.
+    ///
+    /// Applied per activation rather than once at launch, because the session
+    /// is deactivated after every line spoken so that other audio comes back up.
     ///
     /// **Whether this works at all is a question about the device, not the
     /// code.** Apple documents the override as belonging to `.playAndRecord`,
@@ -226,7 +231,15 @@ final class VoiceCoach: NSObject, CoachVoice {
     /// So it is attempted, and the answer is written down. If real phones
     /// refuse, the diagnostic report says so in as many words and the decision
     /// about the microphone can be made on evidence.
-    private func routeToBuiltInSpeaker(_ session: AVAudioSession) {
+    private func applyOutputRoute(_ session: AVAudioSession) {
+        guard settings.forceBuiltInSpeaker else {
+            // The instruction, not the absence of one. Cheap when there was
+            // never an override to undo, and the only thing that makes the
+            // switch reversible when there was.
+            try? session.overrideOutputAudioPort(.none)
+            return
+        }
+
         do {
             try session.overrideOutputAudioPort(.speaker)
 
