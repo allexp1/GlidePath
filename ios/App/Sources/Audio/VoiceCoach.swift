@@ -37,6 +37,22 @@ final class VoiceCoach: NSObject, CoachVoice {
         /// the worst voice on the phone. See `VoiceCatalogue`.
         var voiceIdentifier: String?
 
+        /// Speak out of the iPhone's own speaker instead of wherever the phone
+        /// is currently sending audio.
+        ///
+        /// For cars that are not CarPlay. In a Tesla the phone pairs over
+        /// Bluetooth, but the car plays its *own* Spotify, and while that is
+        /// the selected source nothing the phone sends over Bluetooth is
+        /// audible - so the driver hears music and never hears the camera
+        /// warning. The phone's own speaker is the one output the car cannot
+        /// take away.
+        ///
+        /// It is a worse experience than Bluetooth wherever Bluetooth works,
+        /// which is why it is off by default: the alert competes with the car
+        /// stereo rather than ducking it, because `.duckOthers` has no reach
+        /// into an app running on the car's computer.
+        var forceBuiltInSpeaker = false
+
         /// When true the silent switch silences Zonexplo.
         ///
         /// Off by default, matching every navigation app: a driver who has
@@ -176,6 +192,10 @@ final class VoiceCoach: NSObject, CoachVoice {
             )
             try session.setActive(true)
             isSessionActive = true
+
+            if settings.forceBuiltInSpeaker {
+                routeToBuiltInSpeaker(session)
+            }
         } catch {
             // Losing the session means losing the voice, not the app. The UI
             // still shows live numbers, so failing quietly is right here.
@@ -186,6 +206,49 @@ final class VoiceCoach: NSObject, CoachVoice {
                 "AUDIO SESSION REFUSED - nothing can be spoken: \(error.localizedDescription)"
             )
             print("[Zonexplo] could not activate the audio session: \(error.localizedDescription)")
+        }
+    }
+
+    /// Push this utterance out of the phone's own speaker.
+    ///
+    /// Applied per activation rather than once at launch, because the override
+    /// is a property of the active session: it is dropped every time the
+    /// session is deactivated, which happens after every line spoken.
+    ///
+    /// **Whether this works at all is a question about the device, not the
+    /// code.** Apple documents the override as belonging to `.playAndRecord`,
+    /// and adopting that category to get it would make Zonexplo an app that
+    /// asks for the microphone - a bad trade for something that records
+    /// nothing, and not one to make on a guess. The simulator allows it from
+    /// `.playback`, but the simulator has no Bluetooth route to override and is
+    /// lenient about these rules generally.
+    ///
+    /// So it is attempted, and the answer is written down. If real phones
+    /// refuse, the diagnostic report says so in as many words and the decision
+    /// about the microphone can be made on evidence.
+    private func routeToBuiltInSpeaker(_ session: AVAudioSession) {
+        do {
+            try session.overrideOutputAudioPort(.speaker)
+
+            // The override succeeding is not the same as it taking effect. Ask
+            // the route what actually happened rather than assuming.
+            let outputs = session.currentRoute.outputs.map(\.portType.rawValue)
+            let onSpeaker = session.currentRoute.outputs.contains { $0.portType == .builtInSpeaker }
+
+            Diagnostics.shared.record(
+                .voice,
+                onSpeaker
+                    ? "forced to the iPhone speaker, playing out of \(outputs.joined(separator: ", "))"
+                    : "SPEAKER OVERRIDE ACCEPTED BUT IGNORED - still playing out of "
+                        + "\(outputs.joined(separator: ", ")). This iPhone will not route to its "
+                        + "own speaker from a playback session."
+            )
+        } catch {
+            Diagnostics.shared.record(
+                .voice,
+                "SPEAKER OVERRIDE REFUSED by this iPhone (\(error.localizedDescription)). "
+                    + "Alerts are going wherever the phone is already sending audio."
+            )
         }
     }
 

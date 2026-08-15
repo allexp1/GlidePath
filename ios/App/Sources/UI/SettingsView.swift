@@ -43,10 +43,33 @@ struct SettingsView: View {
                 .disabled(!model.settings.voiceEnabled)
 
                 Toggle("Silent switch mutes Zonexplo", isOn: $model.settings.respectSilentSwitch)
+
+                Toggle("Play through the iPhone speaker", isOn: $model.settings.forceBuiltInSpeaker)
+                    .disabled(!model.settings.voiceEnabled)
             } header: {
                 Text("Voice")
             } footer: {
                 Text(voiceFooter)
+            }
+
+            // Its own section rather than a line in the voice footer, because
+            // it is the answer to a specific and fairly baffling symptom -
+            // everything says it is working and the car stays silent - and
+            // nobody scrolling for that will find it inside a paragraph about
+            // ducking.
+            if model.settings.forceBuiltInSpeaker {
+                Section {
+                    NavigationLink("Diagnostics") { DiagnosticsView() }
+                } footer: {
+                    Text(
+                        "Alerts come out of the phone itself, so a car that is playing its own "
+                            + "music can no longer hide them. It is worth turning off anywhere "
+                            + "Bluetooth works: through the car, Zonexplo lowers the music and "
+                            + "speaks over it, and through the phone it has to compete with it.\n\n"
+                            + "Not every iPhone will allow this. If nothing changes, the "
+                            + "diagnostic log records what the phone did with the request."
+                    )
+                }
             }
 
             Section {

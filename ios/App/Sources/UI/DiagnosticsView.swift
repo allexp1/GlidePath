@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreLocation
 import SwiftUI
 import ZonexploCore
@@ -229,6 +230,9 @@ struct DiagnosticsView: View {
             "Camera announcements": model.settings.announcePointCameras ? "on" : "OFF",
             "Speed limit alerts": model.settings.announceSpeedLimit ? "on" : "OFF",
             "Silent switch mutes": model.settings.respectSilentSwitch ? "YES" : "no",
+            "Forced to phone speaker": model.settings.forceBuiltInSpeaker ? "YES" : "no",
+            "Audio output now": AVAudioSession.sharedInstance().currentRoute.outputs
+                .map(\.portType.rawValue).joined(separator: ", "),
             "Speech rate": String(format: "%.2f", model.settings.speechRate),
             "Chosen voice": model.settings.voiceIdentifier ?? "automatic",
             "Voices available": "\(model.voice.availableVoices.count) for \(VoiceCatalogue.spokenLanguage)",

@@ -241,6 +241,10 @@ struct AppSettings: Equatable {
     var showSpeedLimit: Bool
     var respectSilentSwitch: Bool
 
+    /// Speak out of the iPhone's own speaker rather than wherever the phone is
+    /// sending audio. For cars without CarPlay - see VoiceCoach.Settings.
+    var forceBuiltInSpeaker: Bool
+
     /// The chosen `AVSpeechSynthesisVoice` identifier, or nil for "let
     /// Zonexplo pick the best installed one", which is the default.
     var voiceIdentifier: String?
@@ -292,6 +296,7 @@ struct AppSettings: Equatable {
         announceSpeedLimit = defaults.object(forKey: Keys.announceSpeedLimit) as? Bool ?? true
         showSpeedLimit = defaults.object(forKey: Keys.showSpeedLimit) as? Bool ?? true
         respectSilentSwitch = defaults.object(forKey: Keys.respectSilentSwitch) as? Bool ?? false
+        forceBuiltInSpeaker = defaults.object(forKey: Keys.forceBuiltInSpeaker) as? Bool ?? false
         voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
         speechRate = defaults.object(forKey: Keys.speechRate) as? Double ?? 1.05
         analyticsEnabled = defaults.object(forKey: Keys.analyticsEnabled) as? Bool ?? true
@@ -312,6 +317,7 @@ struct AppSettings: Equatable {
         defaults.set(announceSpeedLimit, forKey: Keys.announceSpeedLimit)
         defaults.set(showSpeedLimit, forKey: Keys.showSpeedLimit)
         defaults.set(respectSilentSwitch, forKey: Keys.respectSilentSwitch)
+        defaults.set(forceBuiltInSpeaker, forKey: Keys.forceBuiltInSpeaker)
         // set(nil:) removes the key, which is exactly what "automatic" means.
         defaults.set(voiceIdentifier, forKey: Keys.voiceIdentifier)
         defaults.set(speechRate, forKey: Keys.speechRate)
@@ -347,6 +353,7 @@ struct AppSettings: Equatable {
         var settings = VoiceCoach.Settings.default
         settings.enabled = voiceEnabled && !mutedForSession
         settings.respectSilentSwitch = respectSilentSwitch
+        settings.forceBuiltInSpeaker = forceBuiltInSpeaker
         settings.voiceIdentifier = voiceIdentifier
         settings.rateScale = speechRate
         return settings
@@ -362,6 +369,7 @@ struct AppSettings: Equatable {
         static let announceSpeedLimit = "settings.announceSpeedLimit"
         static let showSpeedLimit = "settings.showSpeedLimit"
         static let respectSilentSwitch = "settings.respectSilentSwitch"
+        static let forceBuiltInSpeaker = "settings.forceBuiltInSpeaker"
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
         static let analyticsEnabled = "settings.analyticsEnabled"
