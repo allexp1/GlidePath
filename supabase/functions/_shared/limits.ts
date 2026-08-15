@@ -156,7 +156,17 @@ export async function fetchCountryBounds(
   isoCode: string,
   options: OverpassOptions = {}
 ): Promise<BoundingBox> {
-  const response = await runOverpassQuery(countryBoundsQuery(isoCode), options)
+  // Asked twice before believing the answer, for the same reason the camera
+  // and zone queries are: Overpass answers 200 with an empty element list when
+  // it is loaded, and an empty list here is indistinguishable from an ISO code
+  // that does not exist. New York failed exactly this way on 11 August - the
+  // harvest died on the boundary probe having done nothing, and the same query
+  // returned relation 61320 without complaint minutes later.
+  let response = await runOverpassQuery(countryBoundsQuery(isoCode), options)
+  if (response.elements.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 5_000))
+    response = await runOverpassQuery(countryBoundsQuery(isoCode), options)
+  }
 
   let box: BoundingBox | null = null
   for (const element of response.elements) {

@@ -38,7 +38,12 @@ run() {
       seed_limits.ts "$code" >> "$LOG" 2>&1
   fi
 
-  echo "$(date '+%F %T')  $code finished with status $?" >> "$LOG"
+  # Captured before anything else runs. Writing `status $?` inside a line that
+  # also expands $(date) reports the status of date, which is always 0 - so the
+  # first version of this logged "US-NY finished with status 0" for a harvest
+  # that had crashed on its first query and written nothing.
+  local status=$?
+  echo "$(date '+%F %T')  $code finished with status $status" >> "$LOG"
 }
 
 # Finland first: 114,361 rows are already harvested and sitting in the table

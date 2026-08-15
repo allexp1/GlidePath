@@ -32,6 +32,22 @@ import type { DatabaseClient } from '../functions/_shared/sync.ts'
 interface Checkpoint {
   countryCode: string
   tiles: string[]
+
+  /**
+   * When the *first* session of this harvest began.
+   *
+   * Retirement is "not seen since the run started", so a resumed session that
+   * stamps its own clock declares everything the earlier sessions wrote to be
+   * missing. Finland proved it: resuming with 410 tiles already banked left
+   * 114,352 of 115,705 ways looking unseen, and only the 50% ceiling inside
+   * finish_road_limit_sync stopped them being unverified in one go. A country
+   * that happened to be 40% stale would have gone through silently.
+   *
+   * The chunked Edge Function has always threaded this through between calls.
+   * The CLI never did, because its sessions are separated by a checkpoint file
+   * rather than by a function argument - so the checkpoint carries it.
+   */
+  runStartedAt?: string
 }
 
 async function main(): Promise<number> {
@@ -137,11 +153,19 @@ async function main(): Promise<number> {
   const checkpointPath = new URL(`./.limits-${code}.json`, import.meta.url)
 
   let completedTiles = new Set<string>()
+  let runStartedAt = new Date().toISOString()
   if (!restart && !dryRun) {
-    completedTiles = await readCheckpoint(checkpointPath, code)
+    const checkpoint = await readCheckpoint(checkpointPath, code)
+    completedTiles = checkpoint.tiles
     if (completedTiles.size > 0) {
       console.log(`Resuming: ${completedTiles.size} tiles already done.`)
       console.log('Pass --restart to ignore the checkpoint and cover the country again.')
+    }
+    // Inherited, never restamped. See the Checkpoint type for what restamping
+    // costs.
+    if (checkpoint.runStartedAt) {
+      runStartedAt = checkpoint.runStartedAt
+      console.log(`Continuing the run that began at ${runStartedAt}.`)
     }
   }
 
@@ -154,6 +178,7 @@ async function main(): Promise<number> {
   const report = await syncRoadLimits(client as unknown as DatabaseClient, code, iso, {
     dryRun,
     tileDegrees,
+    runStartedAt,
     bounds,
     // A box narrower than the country can never be a complete harvest of it.
     partialArea: bounds !== undefined,
@@ -162,7 +187,11 @@ async function main(): Promise<number> {
     onTileComplete: async (tile) => {
       if (dryRun) return
       done.add(tile)
-      await writeCheckpoint(checkpointPath, { countryCode: code, tiles: [...done] })
+      await writeCheckpoint(checkpointPath, {
+        countryCode: code,
+        tiles: [...done],
+        runStartedAt
+      })
     }
   })
 
@@ -220,16 +249,19 @@ function estimateSize(points: number, ways: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`
 }
 
-async function readCheckpoint(path: URL, code: string): Promise<Set<string>> {
+async function readCheckpoint(
+  path: URL,
+  code: string
+): Promise<{ tiles: Set<string>; runStartedAt?: string }> {
   try {
     const parsed = JSON.parse(await Deno.readTextFile(path)) as Checkpoint
     // A checkpoint from a different country would silently skip tiles that were
     // never fetched, which is the one failure mode that produces a dataset with
     // holes in it and no sign of them.
-    if (parsed.countryCode !== code || !Array.isArray(parsed.tiles)) return new Set()
-    return new Set(parsed.tiles)
+    if (parsed.countryCode !== code || !Array.isArray(parsed.tiles)) return { tiles: new Set() }
+    return { tiles: new Set(parsed.tiles), runStartedAt: parsed.runStartedAt }
   } catch {
-    return new Set()
+    return { tiles: new Set() }
   }
 }
 
