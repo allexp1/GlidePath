@@ -14,8 +14,8 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
 
-    @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var selectedCamera: ZonexploCore.Camera?
+    @State private var follow = MapFollowController()
 
     private var monitor: DriveMonitor? { model.monitor }
 
@@ -23,6 +23,15 @@ struct HomeView: View {
         ZStack(alignment: .bottom) {
             map
                 .ignoresSafeArea()
+
+            // Above the map rather than in it, and only when following - which
+            // is when the driver is at the centre of the screen by definition,
+            // so no coordinate conversion is needed and nothing MapKit draws
+            // can ever cover it.
+            if isFollowing {
+                UserPuck(courseDegrees: steadyCourse, mapHeadingDegrees: follow.mapHeading)
+                    .frame(maxHeight: .infinity)
+            }
 
             // The map deliberately runs under the status bar, which is why its
             // own controls end up there too. These live outside the map, so they
@@ -172,14 +181,13 @@ struct HomeView: View {
                 .accessibilityLabel(model.isMutedForSession ? "Unmute Zonexplo" : "Mute until I reopen the app")
 
                 Button {
-                    withAnimation(.smooth) {
-                        camera = .userLocation(fallback: .automatic)
-                    }
+                    withAnimation(.smooth) { cycleFollowMode() }
                 } label: {
-                    controlIcon("location.fill")
+                    controlIcon(followSymbol)
+                        .foregroundStyle(isFollowing ? Color.accentColor : .primary)
                 }
                 .zonexploGlassCapsule()
-                .accessibilityLabel("Centre the map on my location")
+                .accessibilityLabel(followLabel)
 
                 NavigationLink {
                     SettingsView()
@@ -204,12 +212,58 @@ struct HomeView: View {
     // MARK: - Map
 
     private var map: some View {
-        Map(position: $camera) {
-            UserAnnotation()
+        @Bindable var follow = follow
 
-            zoneOverlays
+        return Map(position: $follow.camera) {
+            ZoneOverlays(
+                activeZone: monitor?.activeZone,
+                advice: monitor?.currentAdvice,
+                nearbyZones: monitor?.nearbyZones ?? [],
+                here: model.location.latestFix?.coordinate
+            )
 
-            ForEach(monitor?.nearbyCameras.prefix(120) ?? [], id: \.id) { pin in
+            cameraPins
+
+            // Only while the driver has panned away. Following puts them at
+            // the centre of the screen by construction, and the puck is drawn
+            // over the map there instead - see `body`.
+            //
+            // Declaration order does not settle this. MapKit z-orders
+            // annotations by its own rules, and a camera pin at the same point
+            // wins however late the puck is declared, which is the bug being
+            // fixed: on a road with a camera at your position you vanished.
+            if !isFollowing, let fix = model.location.latestFix {
+                Annotation("", coordinate: fix.coordinate.clCoordinate) {
+                    UserPuck(
+                        courseDegrees: steadyCourse,
+                        mapHeadingDegrees: follow.mapHeading
+                    )
+                }
+            }
+        }
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+        // Stock controls are positioned inside the map's bounds, which ignore
+        // the safe area here, so they collide with the status bar. Replaced by
+        // topControls above.
+        .mapControlVisibility(.hidden)
+        .onMapCameraChange(frequency: .continuous) { context in
+            follow.noteCameraChange(
+                heading: context.camera.heading,
+                distance: context.camera.distance,
+                byUser: follow.camera.positionedByUser
+            )
+        }
+        // Driven by the fix stream rather than a timer: at 1 Hz the follow is
+        // smooth enough, and the free-mode window expires on the next fix
+        // without anything needing to wake up and check.
+        .onChange(of: model.location.latestFix?.timestamp) { _, _ in
+            followDriverIfDue()
+        }
+    }
+
+    @MapContentBuilder
+    private var cameraPins: some MapContent {
+        ForEach(monitor?.nearbyCameras.prefix(120) ?? [], id: \.id) { pin in
                 Annotation(
                     "",
                     coordinate: CLLocationCoordinate2D(
@@ -229,95 +283,63 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Camera details")
                 }
-            }
-        }
-        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-        // Stock controls are positioned inside the map's bounds, which ignore
-        // the safe area here, so they collide with the status bar. Replaced by
-        // topControls above.
-        .mapControlVisibility(.hidden)
-    }
-
-    // MARK: - Zones on the map
-
-    /// The sections themselves, which are the only thing on this map that a
-    /// camera-alert app does not already show.
-    ///
-    /// A pin says "there is a camera here". A section is a stretch of road with
-    /// a start and an end, and the question a driver in one actually asks is
-    /// "how much more of this is there" - which is spatial, and which the
-    /// numbers on the card can only answer in the abstract. Drawing the road
-    /// answers it in the shape the question was asked in.
-    ///
-    /// The active section is split at the driver: what is behind them is faded
-    /// to the point of being scenery, what is ahead is the thing being driven.
-    /// Its colour is the tier the engine decided, not a second opinion computed
-    /// here, for the same reason the progress bar takes it rather than
-    /// recomputing - a road that disagreed with the voice would be worse than
-    /// no road at all.
-    @MapContentBuilder
-    private var zoneOverlays: some MapContent {
-        ForEach(upcomingZones, id: \.id) { zone in
-            if let path = zone.path {
-                MapPolyline(coordinates: path.coordinates.map(\.clCoordinate))
-                    .stroke(
-                        .purple.opacity(0.45),
-                        style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
-                    )
-            }
-        }
-
-        if let zone = monitor?.activeZone, let path = zone.path {
-            let split = path.split(atDistance: activeZoneProgressMeters(zone: zone, path: path))
-            let tint = monitor?.currentAdvice.map { TierPalette.tint(for: $0.tier) } ?? .green
-
-            // A casing under the whole section, because a coloured line on a
-            // pale map is exactly as legible as the map happens to be that day.
-            MapPolyline(coordinates: path.coordinates.map(\.clCoordinate))
-                .stroke(
-                    .black.opacity(0.28),
-                    style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round)
-                )
-
-            if split.covered.count >= 2 {
-                MapPolyline(coordinates: split.covered.map(\.clCoordinate))
-                    .stroke(
-                        tint.opacity(0.3),
-                        style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
-                    )
-            }
-
-            if split.remaining.count >= 2 {
-                MapPolyline(coordinates: split.remaining.map(\.clCoordinate))
-                    .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-            }
         }
     }
 
-    /// How far along its own polyline the driver is.
+    // MARK: - Following
+
+    private var isFollowing: Bool { follow.isFollowing }
+
+    /// Course, but only when it means something.
     ///
-    /// Scaled, because `distanceMeters` is the authoritative road distance and
-    /// the stored polyline is a simplification that rarely adds up to exactly
-    /// the same number. Using the polyline's own length would drift the drawn
-    /// position away from the distance the card is quoting.
-    private func activeZoneProgressMeters(zone: Zone, path: RoadPath) -> Double {
-        guard zone.distanceMeters > 0, let advice = monitor?.currentAdvice else { return 0 }
-        let covered = zone.distanceMeters - advice.distanceRemainingMeters
-        return path.totalDistance * min(1, max(0, covered / zone.distanceMeters))
+    /// The receiver reports course as invalid below walking pace, and what it
+    /// reports just above that is noise. A puck that spins at a red light, or a
+    /// map that swings through ninety degrees while the car creeps in traffic,
+    /// is worse than one that holds still.
+    private var steadyCourse: Double? {
+        guard let course = model.location.latestFix?.courseDegrees, course >= 0 else { return nil }
+        guard (monitor?.currentSpeedKph ?? 0) >= 8 else { return nil }
+        return course
     }
 
-    /// Sections nearby but not yet entered, nearest first.
-    ///
-    /// Capped at a dozen: the monitor holds zones out to sixty kilometres so
-    /// that geofences can be placed ahead of time, and drawing all of them
-    /// would put roads on the map the driver will not reach for half an hour.
-    /// This is a drawing limit, not a coverage limit - every one of them is
-    /// still armed and will still be announced.
-    private var upcomingZones: [Zone] {
-        let zones = (monitor?.nearbyZones ?? []).filter { $0.id != monitor?.activeZone?.id }
-        guard let here = model.location.latestFix?.coordinate else { return Array(zones.prefix(12)) }
-        let byDistance = zones.sorted { here.distance(to: $0.entry) < here.distance(to: $1.entry) }
-        return Array(byDistance.prefix(12))
+    private func followDriverIfDue() {
+        guard isFollowing, let fix = model.location.latestFix else { return }
+
+        // Holding the current heading rather than snapping to north is what
+        // stops a stop-start crawl from rotating the world every few seconds.
+        let heading = model.settings.mapOrientation == .courseUp
+            ? (steadyCourse ?? follow.mapHeading)
+            : 0
+
+        withAnimation(.linear(duration: 1)) {
+            follow.look(at: fix.coordinate, heading: heading)
+        }
+    }
+
+    /// Three states in one glyph, so the button says what it will do next
+    /// rather than only what it did last.
+    private var followSymbol: String {
+        guard isFollowing else { return "location" }
+        return model.settings.mapOrientation == .courseUp ? "location.north.line.fill" : "location.fill"
+    }
+
+    private var followLabel: String {
+        guard isFollowing else { return "Follow me again" }
+        return model.settings.mapOrientation == .courseUp
+            ? "Facing the way I drive. Tap for north up."
+            : "North up. Tap to face the way I drive."
+    }
+
+    /// The tracking button, which cycles the way Apple Maps' does: off it
+    /// starts following, on it swaps which way up the map is drawn.
+    private func cycleFollowMode() {
+        if !isFollowing {
+            follow.resume()
+        } else {
+            model.settings.mapOrientation =
+                model.settings.mapOrientation == .northUp ? .courseUp : .northUp
+        }
+        followDriverIfDue()
     }
 
     // MARK: - Standby
@@ -431,57 +453,5 @@ struct HomeView: View {
             detail: "Averaged \(phrasebook.speedPhrase(outcome.averageKph)) "
                 + "against \(phrasebook.speedPhrase(outcome.limitKph))"
         )
-    }
-}
-
-private extension ZonexploCore.Coordinate {
-    var clCoordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
-}
-
-/// A camera on the map. Shape carries the type, so the pins are still
-/// distinguishable in greyscale and for a colour-blind driver.
-struct CameraPin: View {
-    let type: CameraType
-    let verified: Bool
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 26, height: 26)
-            .background(background, in: Circle())
-            .overlay(
-                Circle().strokeBorder(.white.opacity(0.7), lineWidth: 1.5)
-            )
-            // An unverified camera is one that vanished from the map data. It
-            // is still shown, because it may well still be there, but it is
-            // shown as the guess it is.
-            .opacity(verified ? 1 : 0.45)
-            .shadow(radius: 2, y: 1)
-    }
-
-    private var symbol: String {
-        switch type {
-        case .fixed: return "camera.fill"
-        case .redLight: return "light.beacon.max.fill"
-        case .combined: return "camera.badge.ellipsis"
-        case .seatbeltPhone: return "iphone.gen3.slash"
-        case .busLane: return "bus.fill"
-        case .mobileHotspot: return "questionmark"
-        case .zoneEntry: return "arrow.right.to.line"
-        case .zoneExit: return "arrow.left.to.line"
-        }
-    }
-
-    private var background: Color {
-        switch type {
-        case .zoneEntry, .zoneExit: return .purple
-        case .mobileHotspot: return .gray
-        case .redLight: return .red
-        case .seatbeltPhone, .busLane: return .blue
-        case .fixed, .combined: return .orange
-        }
     }
 }

@@ -225,6 +225,17 @@ final class AppModel {
     }
 }
 
+/// Which way up the map is drawn while it is following the driver.
+///
+/// North up is the default because it is the one people already have a model
+/// for: a map that never rotates can be compared with a road sign, a memory or
+/// a paper map. Course up is better at speed and worse everywhere else, which
+/// is exactly why it is a choice and not a decision made for the driver.
+enum MapOrientation: String, CaseIterable {
+    case northUp
+    case courseUp
+}
+
 /// User settings, persisted to UserDefaults.
 ///
 /// UserDefaults rather than the database: these are a dozen booleans that must
@@ -244,6 +255,9 @@ struct AppSettings: Equatable {
     /// Speak out of the iPhone's own speaker rather than wherever the phone is
     /// sending audio. For cars without CarPlay - see VoiceCoach.Settings.
     var forceBuiltInSpeaker: Bool
+
+    /// North up or course up while following. See `MapOrientation`.
+    var mapOrientation: MapOrientation
 
     /// The chosen `AVSpeechSynthesisVoice` identifier, or nil for "let
     /// Zonexplo pick the best installed one", which is the default.
@@ -297,6 +311,8 @@ struct AppSettings: Equatable {
         showSpeedLimit = defaults.object(forKey: Keys.showSpeedLimit) as? Bool ?? true
         respectSilentSwitch = defaults.object(forKey: Keys.respectSilentSwitch) as? Bool ?? false
         forceBuiltInSpeaker = defaults.object(forKey: Keys.forceBuiltInSpeaker) as? Bool ?? false
+        mapOrientation = MapOrientation(rawValue: defaults.string(forKey: Keys.mapOrientation) ?? "")
+            ?? .northUp
         voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
         speechRate = defaults.object(forKey: Keys.speechRate) as? Double ?? 1.05
         analyticsEnabled = defaults.object(forKey: Keys.analyticsEnabled) as? Bool ?? true
@@ -318,6 +334,7 @@ struct AppSettings: Equatable {
         defaults.set(showSpeedLimit, forKey: Keys.showSpeedLimit)
         defaults.set(respectSilentSwitch, forKey: Keys.respectSilentSwitch)
         defaults.set(forceBuiltInSpeaker, forKey: Keys.forceBuiltInSpeaker)
+        defaults.set(mapOrientation.rawValue, forKey: Keys.mapOrientation)
         // set(nil:) removes the key, which is exactly what "automatic" means.
         defaults.set(voiceIdentifier, forKey: Keys.voiceIdentifier)
         defaults.set(speechRate, forKey: Keys.speechRate)
@@ -370,6 +387,7 @@ struct AppSettings: Equatable {
         static let showSpeedLimit = "settings.showSpeedLimit"
         static let respectSilentSwitch = "settings.respectSilentSwitch"
         static let forceBuiltInSpeaker = "settings.forceBuiltInSpeaker"
+        static let mapOrientation = "settings.mapOrientation"
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
         static let analyticsEnabled = "settings.analyticsEnabled"
