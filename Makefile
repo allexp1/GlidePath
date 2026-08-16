@@ -165,6 +165,26 @@ doctor: ## Check the machine for the things that break a build before your code 
 			echo "  note     this checkout is inside iCloud Drive; builds work but"; \
 			echo "           eviction and sync churn are on you to watch" ;; \
 	esac
+	@# XcodeGen globs the sources at generation time, so a file added since the
+	@# last `make project` is on disk and not in the target. Xcode then reports
+	@# "cannot find X in scope" for every use of it, which reads as broken code
+	@# rather than a stale project - and the newest file is exactly the one
+	@# nobody suspects. Has cost this project two rounds of "there are errors".
+	@if [ ! -d "$(PROJECT)" ]; then \
+		echo "  MISSING  $(PROJECT) has never been generated - run: make project"; \
+	else \
+		newer=$$(find ios/App/Sources ios/Packages -name '*.swift' \
+			-newer "$(PROJECT)/project.pbxproj" 2>/dev/null | head -5); \
+		if [ -n "$$newer" ]; then \
+			echo "  PROBLEM  source files are newer than the generated project:"; \
+			echo "$$newer" | sed 's/^/             /'; \
+			echo "           Any of them added since the last generate is invisible to"; \
+			echo "           Xcode, which will report it as code that does not compile."; \
+			echo "           Fix: make project"; \
+		else \
+			echo "  ok       generated project is up to date with the sources"; \
+		fi; \
+	fi
 
 # ---------------------------------------------------------------------------
 # Build and test

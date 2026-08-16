@@ -52,6 +52,7 @@ entirely. Every one of these has cost someone real time:
 | `module file is incompatible with this Swift compiler` | stale DerivedData |
 | `failed to unlink '.../ä'` cloning GRDB | `git config --global core.precomposeunicode true` not set |
 | `Missing package product 'ZonexploCore'` | packages not resolved yet, or an iCloud-evicted `Package.swift` |
+| `cannot find 'X' in scope` on a type that plainly exists | a file added since the last `make project` - XcodeGen globs sources at generation time, so it is on disk and not in the target |
 | `RPC failed; curl 56` cloning GRDB | large repo over a flaky link — `git config --global http.version HTTP/1.1`, or clone it once by hand with `--filter=blob:none` and point `project.yml` at the local path |
 
 None of those name their cause in the error text, which is why `doctor` exists.
