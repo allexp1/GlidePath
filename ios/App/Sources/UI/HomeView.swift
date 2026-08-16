@@ -73,6 +73,16 @@ struct HomeView: View {
                 if let approach = monitor?.currentApproach, monitor?.activeZone == nil {
                     CameraApproachBanner(approach: approach, units: model.settings.units)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let passed = monitor?.passedCamera, monitor?.activeZone == nil {
+                    // Never at the same time as a warning. Being asked about the
+                    // last camera while the next one is being announced is how a
+                    // driver ends up reporting the wrong one.
+                    PassedCameraChip(
+                        camera: passed,
+                        onReport: { await model.reportCamera(passed, kind: .cameraGone) },
+                        onDismiss: { monitor?.clearPassed() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if let zone = monitor?.activeZone, let advice = monitor?.currentAdvice {
@@ -92,6 +102,7 @@ struct HomeView: View {
         }
         .animation(.smooth(duration: 0.4), value: monitor?.activeZone?.id)
         .animation(.snappy(duration: 0.3), value: monitor?.currentApproach?.camera.id)
+        .animation(.snappy(duration: 0.3), value: monitor?.passedCamera?.id)
         .sheet(item: $selectedCamera) { tapped in
             CameraDetailSheet(
                 camera: tapped,

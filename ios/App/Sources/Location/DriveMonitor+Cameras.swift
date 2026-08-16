@@ -18,11 +18,50 @@ extension DriveMonitor {
             .filter { shouldAnnounce($0.camera) }
             .min { $0.distanceMeters < $1.distanceMeters }
         if let visible { currentApproach = visible }
-        if approaches.isEmpty { currentApproach = nil }
+        if approaches.isEmpty {
+            // Hand the camera being dropped to the "was it there?" window
+            // before losing it. This is the only moment the driver knows the
+            // answer: while a camera is ahead they are guessing, and thirty
+            // seconds later they have stopped thinking about it.
+            if let passed = currentApproach?.camera, shouldAnnounce(passed) {
+                notePassed(passed, at: fix.timestamp)
+            }
+            currentApproach = nil
+        }
 
         for approach in approaches {
             announce(approach)
         }
+    }
+
+    /// How long after passing a camera the driver is still asked about it.
+    ///
+    /// Short on purpose. Long enough to react to something that was not there,
+    /// short enough that the chip never lingers into the next thing on the road
+    /// - and short enough that it cannot be tapped about a camera the driver
+    /// has already forgotten, which would make the report worth less than the
+    /// silence it replaced.
+    static let passedWindow: TimeInterval = 25
+
+    func notePassed(_ camera: Camera, at timestamp: Date) {
+        // Zone entry and exit markers are the section's own cameras and are
+        // reported by reporting the section, not the post.
+        guard !camera.type.isZoneMarker else { return }
+        recentlyPassed = camera
+        passedAt = timestamp
+        Diagnostics.shared.record(.camera, "passed \(camera.type) - offering the 'not there' chip")
+    }
+
+    /// The camera just driven past, while it is still worth asking about.
+    var passedCamera: Camera? {
+        guard let recentlyPassed, let passedAt else { return nil }
+        guard Date().timeIntervalSince(passedAt) < Self.passedWindow else { return nil }
+        return recentlyPassed
+    }
+
+    func clearPassed() {
+        recentlyPassed = nil
+        passedAt = nil
     }
 
     func announce(_ approach: CameraApproach) {

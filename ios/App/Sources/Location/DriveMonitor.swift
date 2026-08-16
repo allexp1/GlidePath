@@ -59,6 +59,12 @@ final class DriveMonitor {
     /// because it teaches them the screen is stale.
     internal(set) var currentApproach: CameraApproach?
 
+    /// The camera just driven past, and when. Read through `passedCamera`,
+    /// which applies the window - the raw pair outlives it so that expiry is a
+    /// question of time rather than of something remembering to clear it.
+    internal(set) var recentlyPassed: Camera?
+    internal(set) var passedAt: Date?
+
     /// True while precise tracking is on, which the UI surfaces so the battery
     /// cost is never a surprise.
     var isInZone: Bool { session != nil }
