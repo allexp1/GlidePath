@@ -24,6 +24,14 @@ interface CountryRow {
   overpass_iso_code: string | null
 }
 
+/// How long the run gives itself before it stops starting new countries.
+///
+/// The platform's ceiling is 150 seconds, and a country has taken anywhere
+/// from twenty seconds to more than all of it - so this is not a budget that
+/// can be divided evenly. It is only the point past which starting another one
+/// is a coin toss that costs the entire report when it loses.
+const DEADLINE_MS = 110_000
+
 Deno.serve(async (request: Request) => {
   const startedAt = Date.now()
 
@@ -74,7 +82,7 @@ Deno.serve(async (request: Request) => {
     .from('countries')
     .select('code, name, overpass_iso_code')
     .eq('sync_enabled', true)
-    .order('last_synced_at', { ascending: true, nullsFirst: true })
+    .order('last_sync_attempt_at', { ascending: true, nullsFirst: true })
 
   if (error) {
     return json({ error: `could not list countries: ${error.message}` }, 500)
@@ -100,8 +108,33 @@ Deno.serve(async (request: Request) => {
 
   // Sequential on purpose. Overpass is a shared volunteer service and firing
   // parallel country-sized queries at it is how you get rate limited.
+  const skipped: string[] = []
+
   for (const country of countries) {
+    // Stop before the platform stops us.
+    //
+    // Being killed at 150 seconds throws away the report, so the run ends as a
+    // 504 saying nothing about what it did - which is how three nights of zero
+    // progress looked exactly like three nights of normal operation. Returning
+    // under our own power means the response names what was covered and what
+    // was not.
+    if (Date.now() - startedAt > DEADLINE_MS) {
+      skipped.push(country.code)
+      continue
+    }
+
     const iso = country.overpass_iso_code ?? country.code
+
+    // Before the work, never after. A country killed mid-sync writes nothing,
+    // so an attempt stamped afterwards would never be written at all - and the
+    // country would be first in the queue again tomorrow, and the night after,
+    // starving everything behind it. Stamped here it rotates like any other.
+    if (!dryRun) {
+      await client.from('countries')
+        .update({ last_sync_attempt_at: new Date().toISOString() })
+        .eq('code', country.code)
+    }
+
     try {
       const report = await syncCountry(client as unknown as DatabaseClient, country.code, iso, {
         dryRun,
@@ -131,7 +164,11 @@ Deno.serve(async (request: Request) => {
       dryRun,
       durationMs: Date.now() - startedAt,
       synced: reports,
-      failed: failures
+      failed: failures,
+      // Named rather than silently dropped: "covered two of five" is a
+      // different fact from "covered everything", and the difference is
+      // invisible from a list of successes.
+      skippedForTime: skipped
     },
     // Partial failure is still a failure worth alerting on, but only when
     // nothing succeeded is it a hard error.
